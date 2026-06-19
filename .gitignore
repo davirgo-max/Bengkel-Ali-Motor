@@ -1,0 +1,12 @@
+# Firebase
+bengkel_ali/android/app/google-services.json
+
+# Google Service Account
+bengkel_api/config/service_account.json
+
+# Database Backup
+db_backup/
+
+# Flutter Build
+**/build/
+**/.dart_tool/

@@ -1,0 +1,36 @@
+name: bengkel_ali
+description: Sistem Informasi Penjualan Suku Cadang dan Pelayanan Bengkel Ali Motor
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.1
+  shared_preferences: ^2.3.2
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.8
+
+  # Pilih gambar dari galeri / kamera
+  image_picker: ^1.1.2
+
+  # Tampilkan gambar dari URL dengan cache & placeholder
+  cached_network_image: ^3.4.1
+
+  # Firebase
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^17.2.2
+
+  device_info_plus: ^10.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
