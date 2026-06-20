@@ -361,20 +361,6 @@ class _BookingKasirScreenState extends State<BookingKasirScreen>
       return;
     }
 
-    if (aksi == 'review_sparepart') {
-      await showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => _ReviewSparepartSheet(
-          bookingId: b.id,
-          onSelesai: _load,
-        ),
-      );
-      return;
-    }
-
     // Map aksi ke action API
     final actionMap = {
       'konfirmasi': 'konfirmasi',
@@ -735,285 +721,38 @@ class _AksiBookingSheet extends StatelessWidget {
               _SheetBtn(Icons.cancel, 'Tandai No-Show', Colors.red,
                   () => onAksi('no_show')),
             if (booking.adaPartRequest)
-              _SheetBtn(
-                Icons.build_circle,
-                'Review Sparepart (${booking.partRequestMenunggu})',
-                Colors.orange,
-                () => onAksi('review_sparepart'),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.build_circle,
+                          color: Colors.orange.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Pelanggan meminta ${booking.partRequestMenunggu} sparepart — '
+                          'akan otomatis masuk ke servis saat booking diaktifkan.',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.orange.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             if (booking.adaServis)
               _SheetBtn(Icons.build, 'Lihat Detail Servis', Colors.orange,
                   () => onAksi('lihat_servis')),
             const SizedBox(height: 8),
           ]),
-    );
-  }
-}
-
-// ── Bottom sheet review sparepart request ─────────────────
-class _ReviewSparepartSheet extends StatefulWidget {
-  final int bookingId;
-  final void Function() onSelesai;
-
-  const _ReviewSparepartSheet({
-    required this.bookingId,
-    required this.onSelesai,
-  });
-
-  @override
-  State<_ReviewSparepartSheet> createState() => _ReviewSparepartSheetState();
-}
-
-class _ReviewSparepartSheetState extends State<_ReviewSparepartSheet> {
-  bool _loading = true;
-  bool _submitting = false;
-  List<KasirBookingSparepartRequest> _items = [];
-
-  // State review per item: id → { status, catatan_kasir }
-  final Map<int, Map<String, dynamic>> _review = {};
-  // Controller catatan kasir per item
-  final Map<int, TextEditingController> _catatanCtrl = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDetail();
-  }
-
-  @override
-  void dispose() {
-    for (final c in _catatanCtrl.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _loadDetail() async {
-    final res = await KasirService.instance.getBookingDetail(widget.bookingId);
-    if (!mounted) return;
-    if (res['success'] == true) {
-      final raw = (res['data']['sparepart_request'] as List? ?? []);
-      final items =
-          raw.map((e) => KasirBookingSparepartRequest.fromJson(e)).toList();
-      // Inisialisasi state review dengan status saat ini
-      for (final item in items) {
-        _review[item.id] = {
-          'id': item.id,
-          'status': item.status,
-          'catatan_kasir': item.catatanKasir ?? '',
-        };
-        _catatanCtrl[item.id] =
-            TextEditingController(text: item.catatanKasir ?? '');
-      }
-      setState(() {
-        _items = items;
-        _loading = false;
-      });
-    } else {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _submit() async {
-    setState(() => _submitting = true);
-    final items = _review.values.toList();
-    final res = await KasirService.instance
-        .reviewSparepartRequest(widget.bookingId, items.cast());
-    if (!mounted) return;
-    setState(() => _submitting = false);
-
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(res['message'] ?? 'Selesai'),
-      backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-    ));
-    if (res['success'] == true) {
-      Navigator.pop(context);
-      widget.onSelesai();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.92,
-      builder: (_, scrollCtrl) => Column(
-        children: [
-          // Handle
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Icon(Icons.build_circle, color: Colors.orange.shade700),
-                const SizedBox(width: 8),
-                const Text('Review Sparepart Request',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ],
-            ),
-          ),
-          const Divider(height: 16),
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_items.isEmpty)
-            const Expanded(
-              child: Center(
-                  child: Text('Tidak ada sparepart request untuk booking ini')),
-            )
-          else
-            Expanded(
-              child: ListView.separated(
-                controller: scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                itemCount: _items.length,
-                separatorBuilder: (_, __) => const Divider(height: 20),
-                itemBuilder: (_, i) => _buildItemRow(_items[i]),
-              ),
-            ),
-          if (!_loading && _items.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              child: SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton(
-                  onPressed: _submitting ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade700,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
-                      : const Text('Simpan Review',
-                          style: TextStyle(fontSize: 15)),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemRow(KasirBookingSparepartRequest item) {
-    final state = _review[item.id]!;
-    final currentStatus = state['status'] as String;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Nama & info
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.nama,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(
-                    '${item.jumlah} ${item.satuan}  •  '
-                    'Rp ${item.hargaJual.toStringAsFixed(0)}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                  if (item.catatan != null && item.catatan!.isNotEmpty)
-                    Text('Catatan: ${item.catatan}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.blue.shade700,
-                            fontStyle: FontStyle.italic)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        // Pilihan status
-        Row(
-          children: [
-            _StatusChip('Setujui', 'disetujui', Colors.green, currentStatus,
-                (v) => setState(() => state['status'] = v)),
-            const SizedBox(width: 6),
-            _StatusChip('Tolak', 'ditolak', Colors.red, currentStatus,
-                (v) => setState(() => state['status'] = v)),
-            const SizedBox(width: 6),
-            _StatusChip('Ganti', 'diganti', Colors.blue, currentStatus,
-                (v) => setState(() => state['status'] = v)),
-          ],
-        ),
-        // Catatan kasir (tampil jika ditolak/diganti)
-        if (currentStatus == 'ditolak' || currentStatus == 'diganti') ...[
-          const SizedBox(height: 6),
-          TextField(
-            controller: _catatanCtrl[item.id],
-            onChanged: (v) => state['catatan_kasir'] = v,
-            decoration: InputDecoration(
-              hintText: currentStatus == 'diganti'
-                  ? 'Sparepart pengganti / keterangan...'
-                  : 'Alasan ditolak...',
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  final String current;
-  final void Function(String) onTap;
-
-  const _StatusChip(
-      this.label, this.value, this.color, this.current, this.onTap);
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = current == value;
-    return GestureDetector(
-      onTap: () => onTap(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? color : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: selected ? color : Colors.grey.shade300, width: 1.5),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : Colors.grey.shade600,
-          ),
-        ),
-      ),
     );
   }
 }

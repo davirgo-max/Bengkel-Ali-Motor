@@ -6,8 +6,8 @@ class AppConstants {
   // ── Base URL ──────────────────────────────────────────────
   // Ganti IP ini dengan IP laptop kamu yang muncul di ipconfig
   // Emulator Android TIDAK bisa pakai 'localhost' untuk akses XAMPP
-  static const String baseUrl = 'http://192.168.1.24/bengkel_api';
-  static const String uploadUrl = 'http://192.168.1.24/bengkel_api/uploads';
+  static const String baseUrl = 'http://192.168.1.6/bengkel_api';
+  static const String uploadUrl = 'http://192.168.1.6/bengkel_api/uploads';
 
   // ── Auth ──────────────────────────────────────────────────
   static const String loginUrl = '$baseUrl/auth/login.php';

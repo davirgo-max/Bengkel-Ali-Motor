@@ -219,9 +219,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
                 $servisId = $stmt->insert_id;
                 $stmt->close();
             }
+
+            // ── Auto-import sparepart request pelanggan ke servis_sparepart ──
+            // Ambil semua request dari booking ini (semua status, termasuk menunggu)
+            $stmtReq = $db->prepare("
+                SELECT bsr.sparepart_id, bsr.jumlah, bsr.harga_jual, bsr.subtotal
+                FROM booking_sparepart_request bsr
+                WHERE bsr.booking_id = ?
+            ");
+            $stmtReq->bind_param('i', $id);
+            $stmtReq->execute();
+            $partRequests = $stmtReq->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmtReq->close();
+
+            if (!empty($partRequests)) {
+                $stmtIns = $db->prepare("
+                    INSERT IGNORE INTO servis_sparepart
+                      (servis_id, sparepart_id, jumlah, harga_jual, subtotal,
+                       sumber, status_persetujuan)
+                    VALUES (?, ?, ?, ?, ?, 'request', 'disetujui')
+                ");
+                foreach ($partRequests as $req) {
+                    $stmtIns->bind_param(
+                        'iiidd',
+                        $servisId,
+                        $req['sparepart_id'],
+                        $req['jumlah'],
+                        $req['harga_jual'],
+                        $req['subtotal']
+                    );
+                    $stmtIns->execute();
+                }
+                $stmtIns->close();
+
+                // Tandai semua request sebagai disetujui di tabel request
+                $stmtUpd = $db->prepare("
+                    UPDATE booking_sparepart_request
+                    SET status = 'disetujui'
+                    WHERE booking_id = ? AND status = 'menunggu'
+                ");
+                $stmtUpd->bind_param('i', $id);
+                $stmtUpd->execute();
+                $stmtUpd->close();
+            }
+            // ─────────────────────────────────────────────────────────────────
+
             $db->close();
             responseOk('Booking diaktifkan, servis dimulai', [
-                'servis_id' => $servisId,
+                'servis_id'       => $servisId,
+                'part_diimport'   => count($partRequests),
             ]);
 
         case 'no_show':
@@ -276,41 +322,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             $stmt->execute(); $stmt->close();
             responseOk('Booking dikonversi ke walk-in');
 
-        case 'review_sparepart':
-            if (!in_array($booking['status'], ['menunggu', 'dikonfirmasi', 'aktif']))
-                responseError('Booking dengan status "' . $booking['status'] . '" tidak dapat di-review');
-
-            $items = $body['items'] ?? [];
-            if (empty($items) || !is_array($items))
-                responseError('Array items wajib diisi');
-
-            $validStatus = ['disetujui', 'ditolak', 'diganti'];
-            $stmtUpd = $db->prepare("
-                UPDATE booking_sparepart_request
-                SET status = ?, catatan_kasir = ?
-                WHERE id = ? AND booking_id = ?
-            ");
-
-            $updated = 0;
-            foreach ($items as $item) {
-                $itemId       = (int)($item['id']           ?? 0);
-                $itemStatus   = trim($item['status']        ?? '');
-                $catatanKasir = trim($item['catatan_kasir'] ?? '') ?: null;
-
-                if (!$itemId || !in_array($itemStatus, $validStatus)) continue;
-
-                $stmtUpd->bind_param('ssii', $itemStatus, $catatanKasir, $itemId, $id);
-                $stmtUpd->execute();
-                $updated += $stmtUpd->affected_rows;
-            }
-            $stmtUpd->close();
-
-            if ($updated === 0) responseError('Tidak ada item yang diperbarui');
-
-            $db->close();
-            responseOk("$updated item sparepart berhasil di-review", [
-                'updated' => $updated,
-            ]);
+        // review_sparepart tidak lagi digunakan — sparepart request otomatis
+        // diimport ke servis_sparepart saat booking diaktifkan (action: aktifkan).
+        // Kasir cukup mengelola sparepart langsung dari halaman kelola servis.
 
         default:
             responseError('Action tidak valid');

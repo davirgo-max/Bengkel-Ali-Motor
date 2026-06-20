@@ -39,6 +39,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) responseError('Booking tidak ditemukan', 404);
+
+        // ── Sertakan sparepart request pelanggan (jika ada) ──
+        $stmtSp = $db->prepare("
+            SELECT bsr.id, bsr.sparepart_id, sp.nama, sp.satuan,
+                   bsr.jumlah, bsr.harga_jual, bsr.subtotal,
+                   bsr.catatan, bsr.status, bsr.catatan_kasir
+            FROM booking_sparepart_request bsr
+            JOIN sparepart sp ON sp.id = bsr.sparepart_id
+            WHERE bsr.booking_id = ?
+            ORDER BY bsr.id ASC
+        ");
+        $stmtSp->bind_param('i', $id);
+        $stmtSp->execute();
+        $spRows = [];
+        $resSp  = $stmtSp->get_result();
+        while ($r = $resSp->fetch_assoc()) {
+            $r['harga_jual'] = (float)$r['harga_jual'];
+            $r['subtotal']   = (float)$r['subtotal'];
+            $r['jumlah']     = (int)$r['jumlah'];
+            $spRows[] = $r;
+        }
+        $stmtSp->close();
+        $row['sparepart_request'] = $spRows;
+        // ─────────────────────────────────────────────────────
+
         responseOk('OK', $row);
     }
 

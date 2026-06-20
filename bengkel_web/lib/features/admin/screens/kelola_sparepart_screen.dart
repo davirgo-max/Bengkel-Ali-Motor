@@ -642,7 +642,7 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
                       children: [
                         const FieldLabel('Kategori'),
                         DropdownButtonFormField<int?>(
-                          value: _katId,
+                          initialValue: _katId,
                           decoration:
                               const InputDecoration(hintText: 'Pilih kategori'),
                           items: [

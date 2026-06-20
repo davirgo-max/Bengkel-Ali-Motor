@@ -154,14 +154,18 @@ class _BookingList extends StatelessWidget {
 }
 
 // ── Tile satu booking ─────────────────────────────────────
-class _BookingTile extends StatelessWidget {
+class _BookingTile extends StatefulWidget {
   final BookingModel booking;
   final Future<void> Function() onChanged;
   const _BookingTile({required this.booking, required this.onChanged});
 
-  // warna aksen per status
+  @override
+  State<_BookingTile> createState() => _BookingTileState();
+}
+
+class _BookingTileState extends State<_BookingTile> {
   Color _statusColor() {
-    switch (booking.status) {
+    switch (widget.booking.status) {
       case 'menunggu':
         return Colors.orange.shade600;
       case 'dikonfirmasi':
@@ -184,7 +188,7 @@ class _BookingTile extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Batalkan Booking?'),
-        content: Text('Booking ${booking.noBooking} akan dibatalkan.'),
+        content: Text('Booking ${widget.booking.noBooking} akan dibatalkan.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -200,18 +204,41 @@ class _BookingTile extends StatelessWidget {
     );
     if (ok != true) return;
 
-    final res = await PelangganService.instance.batalBooking(booking.id);
+    final res = await PelangganService.instance.batalBooking(widget.booking.id);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(res['message'] as String? ?? ''),
         backgroundColor: res['success'] == true ? Colors.green : Colors.red,
       ));
-      if (res['success'] == true) onChanged();
+      if (res['success'] == true) widget.onChanged();
     }
+  }
+
+  bool _expanded = false;
+  bool _loadingPart = false;
+  List<BookingSparepartRequestModel> _partList = [];
+  bool _partLoaded = false;
+
+  Future<void> _loadSparepart() async {
+    if (_partLoaded) return;
+    setState(() => _loadingPart = true);
+    final res =
+        await PelangganService.instance.getBookingDetail(widget.booking.id);
+    if (!mounted) return;
+    final rawPart = res['data']?['sparepart_request'];
+    if (rawPart is List) {
+      _partList =
+          rawPart.map((e) => BookingSparepartRequestModel.fromJson(e)).toList();
+    }
+    setState(() {
+      _loadingPart = false;
+      _partLoaded = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final booking = widget.booking;
     final bisaBatal = ['menunggu', 'dikonfirmasi'].contains(booking.status);
     final color = _statusColor();
 
@@ -221,7 +248,6 @@ class _BookingTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // Garis kiri berwarna per status
           IntrinsicHeight(
             child: Row(
               children: [
@@ -232,7 +258,6 @@ class _BookingTile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header: no booking + badge status
                         Row(
                           children: [
                             Expanded(
@@ -247,21 +272,18 @@ class _BookingTile extends StatelessWidget {
                         ),
                         const Divider(height: 14),
 
-                        // Kendaraan
                         _InfoRow(
                           icon: Icons.two_wheeler,
                           text:
-                              '${booking.merk} ${booking.model} • ${booking.noPolisi}',
+                              '${booking.merk} ${booking.model} \u2022 ${booking.noPolisi}',
                         ),
 
-                        // Tanggal
                         const SizedBox(height: 5),
                         _InfoRow(
                           icon: Icons.calendar_today,
                           text: FormatHelper.tanggal(booking.tanggalServis),
                         ),
 
-                        // Jenis servis (jika ada)
                         if (booking.jenisServis != null) ...[
                           const SizedBox(height: 5),
                           _InfoRow(
@@ -270,7 +292,6 @@ class _BookingTile extends StatelessWidget {
                           ),
                         ],
 
-                        // Status servis in-progress (jika sudah aktif)
                         if (booking.statusServis != null &&
                             booking.status == 'aktif') ...[
                           const SizedBox(height: 5),
@@ -282,7 +303,6 @@ class _BookingTile extends StatelessWidget {
                           ),
                         ],
 
-                        // Catatan kasir (jika ada)
                         if (booking.catatanKasir != null &&
                             booking.catatanKasir!.isNotEmpty) ...[
                           const SizedBox(height: 8),
@@ -310,6 +330,119 @@ class _BookingTile extends StatelessWidget {
                               ],
                             ),
                           ),
+                        ],
+
+                        // Tombol toggle sparepart request
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            final willExpand = !_expanded;
+                            setState(() => _expanded = willExpand);
+                            if (willExpand) await _loadSparepart();
+                          },
+                          child: Row(
+                            children: [
+                              Icon(Icons.build_circle_outlined,
+                                  size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Text(
+                                _expanded
+                                    ? 'Sembunyikan sparepart'
+                                    : 'Lihat sparepart request',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                    decoration: TextDecoration.underline),
+                              ),
+                              const SizedBox(width: 2),
+                              Icon(
+                                _expanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                size: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Panel sparepart request
+                        if (_expanded) ...[
+                          const SizedBox(height: 8),
+                          if (_loadingPart)
+                            const Center(
+                                child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)))
+                          else if (_partList.isEmpty)
+                            Text(
+                              'Tidak ada sparepart yang diminta saat booking.',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade500),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                border: Border.all(color: Colors.grey.shade200),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Sparepart Request',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey.shade700)),
+                                  const SizedBox(height: 6),
+                                  ..._partList.map((p) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 6),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(p.namaPart,
+                                                      style: const TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w500)),
+                                                  Text(
+                                                    '${p.jumlah} ${p.satuan} \u2022 Rp ${p.hargaJual.toStringAsFixed(0)}',
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors
+                                                            .grey.shade600),
+                                                  ),
+                                                  if (p.catatan != null &&
+                                                      p.catatan!.isNotEmpty)
+                                                    Text(
+                                                      'Catatan: ${p.catatan}',
+                                                      style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontStyle:
+                                                              FontStyle.italic,
+                                                          color: Colors
+                                                              .blue.shade700),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            _SparepartStatusBadge(p.status),
+                                          ],
+                                        ),
+                                      )),
+                                ],
+                              ),
+                            ),
                         ],
 
                         // Tombol batal
@@ -357,6 +490,47 @@ class _BookingTile extends StatelessWidget {
       default:
         return s;
     }
+  }
+}
+
+class _SparepartStatusBadge extends StatelessWidget {
+  final String status;
+  const _SparepartStatusBadge(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg;
+    Color fg;
+    String label;
+    switch (status) {
+      case 'disetujui':
+        bg = Colors.green.shade100;
+        fg = Colors.green.shade800;
+        label = 'Disetujui';
+        break;
+      case 'ditolak':
+        bg = Colors.red.shade100;
+        fg = Colors.red.shade800;
+        label = 'Ditolak';
+        break;
+      case 'diganti':
+        bg = Colors.blue.shade100;
+        fg = Colors.blue.shade800;
+        label = 'Diganti';
+        break;
+      default:
+        bg = Colors.orange.shade100;
+        fg = Colors.orange.shade800;
+        label = 'Menunggu';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: fg)),
+    );
   }
 }
 
