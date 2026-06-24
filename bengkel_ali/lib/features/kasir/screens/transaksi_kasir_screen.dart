@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/format_helper.dart';
 import '../services/kasir_service.dart';
+import 'servis_kasir_screen.dart';
 
 class TransaksiKasirScreen extends StatefulWidget {
   const TransaksiKasirScreen({super.key});
@@ -58,6 +59,27 @@ class _TransaksiKasirScreenState extends State<TransaksiKasirScreen> {
 
   String _fmtDate(DateTime d) =>
       "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+
+  void _bukaaNota(Map<String, dynamic> data) {
+    final trxId = (data['id'] as num?)?.toInt();
+    if (trxId == null) return;
+    final noNota = data['no_nota'] as String? ?? '';
+    final metodeBayar = data['metode_bayar'] as String? ?? 'cash';
+    final grandTotal = (data['grand_total'] as num?)?.toDouble() ?? 0;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotaScreen(
+          transaksiId: trxId,
+          noNota: noNota,
+          metodeBayar: metodeBayar,
+          grandTotal: grandTotal,
+          jumlahBayar: grandTotal,
+          kembalian: 0,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +153,10 @@ class _TransaksiKasirScreenState extends State<TransaksiKasirScreen> {
                         child: ListView.builder(
                           padding: const EdgeInsets.all(12),
                           itemCount: _list.length,
-                          itemBuilder: (_, i) => _TransaksiCard(data: _list[i]),
+                          itemBuilder: (_, i) => _TransaksiCard(
+                            data: _list[i],
+                            onTap: () => _bukaaNota(_list[i]),
+                          ),
                         ),
                       ),
           ),
@@ -144,7 +169,8 @@ class _TransaksiKasirScreenState extends State<TransaksiKasirScreen> {
 // ── Kartu Transaksi ───────────────────────────────────────
 class _TransaksiCard extends StatelessWidget {
   final Map<String, dynamic> data;
-  const _TransaksiCard({required this.data});
+  final VoidCallback onTap;
+  const _TransaksiCard({required this.data, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -155,12 +181,10 @@ class _TransaksiCard extends StatelessWidget {
             (data['grand_total'] ?? data['total'] ?? 0).toString()) ??
         0;
 
-    // Label judul: no_booking untuk servis, no_nota untuk sparepart langsung
     final judulText = isSparepart
         ? (data['no_nota'] as String? ?? '-')
         : (data['no_booking'] as String? ?? '-');
 
-    // Subtitle: nama pelanggan atau keterangan walk-in
     final subtitleText = isSparepart
         ? 'Penjualan Sparepart (Tanpa Pelanggan)'
         : (data['nama_pelanggan'] as String? ?? '-');
@@ -168,88 +192,99 @@ class _TransaksiCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(judulText,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 8),
-                // Badge tipe transaksi (kiri)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isSparepart
-                        ? Colors.orange.shade50
-                        : Colors.purple.shade50,
-                    borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(judulText,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
-                  child: Text(
-                    isSparepart
-                        ? 'SPAREPART'
-                        : (data['no_booking'] != null ? 'BOOKING' : 'WALK-IN'),
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isSparepart
-                            ? Colors.orange.shade700
-                            : Colors.purple.shade700),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isSparepart
+                          ? Colors.orange.shade50
+                          : Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      isSparepart
+                          ? 'SPAREPART'
+                          : (data['no_booking'] != null
+                              ? 'BOOKING'
+                              : 'WALK-IN'),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isSparepart
+                              ? Colors.orange.shade700
+                              : Colors.purple.shade700),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                // Badge metode bayar (kanan)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: metodeBayar == 'transfer'
-                        ? Colors.teal.shade50
-                        : Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: metodeBayar == 'transfer'
+                          ? Colors.teal.shade50
+                          : Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      metodeBayar.toUpperCase(),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: metodeBayar == 'transfer'
+                              ? Colors.teal.shade700
+                              : Colors.blue.shade700),
+                    ),
                   ),
-                  child: Text(
-                    metodeBayar.toUpperCase(),
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: metodeBayar == 'transfer'
-                            ? Colors.teal.shade700
-                            : Colors.blue.shade700),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(subtitleText,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: isSparepart
+                          ? Colors.orange.shade400
+                          : Colors.grey.shade600,
+                      fontStyle:
+                          isSparepart ? FontStyle.italic : FontStyle.normal)),
+              const Divider(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Total Bayar',
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                  Row(
+                    children: [
+                      Text(FormatHelper.currency(total),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Colors.teal)),
+                      const SizedBox(width: 8),
+                      Icon(Icons.receipt_long,
+                          size: 16, color: Colors.indigo.shade300),
+                    ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(subtitleText,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: isSparepart
-                        ? Colors.orange.shade400
-                        : Colors.grey.shade600,
-                    fontStyle:
-                        isSparepart ? FontStyle.italic : FontStyle.normal)),
-            const Divider(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Total Bayar',
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                Text(FormatHelper.currency(total),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.teal)),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

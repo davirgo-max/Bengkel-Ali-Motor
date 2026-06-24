@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 // lib/features/kasir/services/kasir_service.dart
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../../auth/services/auth_service.dart';
 import '../../../core/constants/app_constants.dart';
@@ -210,6 +211,9 @@ class KasirService {
   Future<Map<String, dynamic>> getDetailNota(int transaksiId) =>
       _get('${AppConstants.baseUrl}/kasir/transaksi.php?id=$transaksiId');
 
+  Future<Map<String, dynamic>> getTransaksiByServis(int servisId) =>
+      _get('${AppConstants.baseUrl}/kasir/transaksi.php?servis_id=$servisId');
+
   // ── PELANGGAN (kasir) ─────────────────────────────────
   Future<Map<String, dynamic>> cariPelanggan(String keyword) =>
       _get('${AppConstants.baseUrl}/kasir/pelanggan.php?search=$keyword');
@@ -287,6 +291,27 @@ class KasirService {
   /// Ambil pengaturan bengkel (termasuk kuota_booking_harian).
   Future<Map<String, dynamic>> getPengaturan() =>
       _get('${AppConstants.baseUrl}/kasir/pengaturan.php');
+
+  // ── UPLOAD BUKTI TRANSFER ─────────────────────────────
+  Future<Map<String, dynamic>> uploadBuktiBayar({
+    required int transaksiId,
+    required File foto,
+  }) async {
+    final token = await AuthService.instance.getToken();
+    final uri =
+        Uri.parse('${AppConstants.baseUrl}/kasir/transaksi.php?upload_bukti=1');
+    final req = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..fields['transaksi_id'] = transaksiId.toString()
+      ..files.add(await http.MultipartFile.fromPath('bukti_bayar', foto.path));
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+    try {
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      return {'success': false, 'message': 'Response tidak valid'};
+    }
+  }
 
   // ── Helper tanggal ────────────────────────────────────
   String _today() {

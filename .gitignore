@@ -4,6 +4,9 @@ bengkel_ali/android/app/google-services.json
 # Google Service Account
 bengkel_api/config/service_account.json
 
+# FCM cache
+bengkel_api/config/fcm_token_cache.json
+
 # Database Backup
 db_backup/
 

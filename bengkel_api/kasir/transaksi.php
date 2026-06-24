@@ -14,8 +14,50 @@ $auth    = requireRole('kasir', 'owner');
 $kasirId = $auth['user_id'];
 $db      = getDB();
 
+// ── POST: upload bukti transfer ───────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['upload_bukti'])) {
+    $transaksiId = (int)($_POST['transaksi_id'] ?? 0);
+    if ($transaksiId <= 0) responseError('transaksi_id tidak valid');
+    if (empty($_FILES['bukti_bayar'])) responseError('File bukti tidak ditemukan');
+
+    $file     = $_FILES['bukti_bayar'];
+    $ext      = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowed  = ['jpg', 'jpeg', 'png', 'webp'];
+    if (!in_array($ext, $allowed)) responseError('Format file tidak didukung');
+    if ($file['size'] > 5 * 1024 * 1024) responseError('Ukuran file maksimal 5MB');
+
+    $uploadDir = __DIR__ . '/../uploads/bukti_bayar/';
+    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+    $filename  = 'bukti_' . $transaksiId . '_' . time() . '.' . $ext;
+    $destPath  = $uploadDir . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $destPath))
+        responseError('Gagal menyimpan file', 500);
+
+    // Simpan path ke DB (kolom bukti_bayar di tabel transaksi)
+    $stmt = $db->prepare("UPDATE transaksi SET bukti_bayar = ? WHERE id = ?");
+    $stmt->bind_param('si', $filename, $transaksiId);
+    $stmt->execute(); $stmt->close();
+    $db->close();
+
+    responseOk('Bukti pembayaran berhasil diunggah', ['filename' => $filename]);
+}
+
 // ── GET ───────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+
+    // Detail 1 transaksi berdasarkan servis_id (untuk tombol "Lihat Nota" dari detail servis)
+    if (isset($_GET['servis_id'])) {
+        $servisId = (int)$_GET['servis_id'];
+        $stmt = $db->prepare("SELECT id, no_nota, metode_bayar, grand_total, jumlah_bayar, kembalian FROM transaksi WHERE servis_id = ? LIMIT 1");
+        $stmt->bind_param('i', $servisId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) responseError('Transaksi tidak ditemukan untuk servis ini', 404);
+        responseOk('OK', $row);
+    }
 
     // Detail 1 transaksi (untuk cetak nota)
     if (isset($_GET['id'])) {
@@ -143,15 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($metodeBayar, ['cash','transfer']))
         responseError('Metode bayar tidak valid');
 
-    // Validasi kas harian sudah dibuka
-    $kasStmt = $db->prepare("SELECT id FROM kas_harian WHERE tanggal = CURDATE() AND status = 'terbuka' LIMIT 1");
-    $kasStmt->execute();
-    $kasStmt->store_result();
-    if ($kasStmt->num_rows === 0) {
-        $kasStmt->close();
-        responseError('Kas harian belum dibuka. Buka kas terlebih dahulu sebelum memproses pembayaran.');
-    }
-    $kasStmt->close();
+    // Kas harian tidak lagi digunakan — validasi dihapus
 
     // ── TAMBAHKAN INI: cek servis sudah dibayar ──────────────
     if ($servisId) {
@@ -258,17 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute(); $stmt->close();
     }
 
-    // Update kas harian — tambah pemasukan
-    // kas_akhir_sistem dihitung SETELAH total_pemasukan ter-update
-    // sehingga cukup: kas_awal + total_pemasukan (yang sudah include grandTotal)
-    $stmt = $db->prepare("
-        UPDATE kas_harian
-        SET total_pemasukan    = total_pemasukan + ?,
-            kas_akhir_sistem   = kas_awal + (total_pemasukan + ?)
-        WHERE tanggal = CURDATE() AND status = 'terbuka'
-    ");
-    $stmt->bind_param('dd', $grandTotal, $grandTotal);
-    $stmt->execute(); $stmt->close();
+    // Kas harian tidak lagi digunakan — update kas dihapus
 
     // ── Notifikasi FCM: pembayaran berhasil ───────────────
     if ($pelangganId && $servisId) {

@@ -27,6 +27,11 @@ dependencies:
 
   device_info_plus: ^10.1.0
 
+  # Generate PDF nota & share ke app lain
+  pdf: ^3.11.1
+  share_plus: ^10.0.0
+  path_provider: ^2.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -52,20 +52,8 @@ if (!in_array($metodeBayar, ['cash', 'transfer'])) {
     responseError('Metode bayar tidak valid');
 }
 
-// ── Validasi kas harian sudah dibuka ─────────────────────
+// Kas harian tidak lagi digunakan — validasi dihapus
 $db = getDB();
-
-$kasStmt = $db->prepare(
-    "SELECT id FROM kas_harian WHERE tanggal = CURDATE() AND status = 'terbuka' LIMIT 1"
-);
-$kasStmt->execute();
-$kasStmt->store_result();
-if ($kasStmt->num_rows === 0) {
-    $kasStmt->close();
-    $db->close();
-    responseError('Kas harian belum dibuka. Buka kas terlebih dahulu.');
-}
-$kasStmt->close();
 
 // ── Validasi setiap item & hitung total ──────────────────
 $totalSparepart = 0.0;
@@ -172,18 +160,7 @@ try {
     }
     $stmtDetail->close();
 
-    // Update kas harian
-    $stmtKas = $db->prepare("
-        UPDATE kas_harian
-        SET total_pemasukan  = total_pemasukan + ?,
-            kas_akhir_sistem = kas_awal + (total_pemasukan + ?)
-        WHERE tanggal = CURDATE() AND status = 'terbuka'
-    ");
-    $stmtKas->bind_param('dd', $grandTotal, $grandTotal);
-    if (!$stmtKas->execute()) {
-        throw new Exception('Gagal update kas harian: ' . $stmtKas->error);
-    }
-    $stmtKas->close();
+    // Kas harian tidak lagi digunakan — update kas dihapus
 
     $db->commit();
 

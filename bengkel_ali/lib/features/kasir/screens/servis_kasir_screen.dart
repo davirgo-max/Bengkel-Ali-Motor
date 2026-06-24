@@ -1,4 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../core/utils/format_helper.dart';
 import '../models/kasir_models.dart';
@@ -481,6 +488,44 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
     );
   }
 
+  Future<void> _lihatNota() async {
+    // Cari transaksi_id dari servis ini
+    final res =
+        await KasirService.instance.getTransaksiByServis(widget.servisId);
+    if (!mounted) return;
+    if (res['success'] == true && res['data'] != null) {
+      final trxId = (res['data']['id'] as num?)?.toInt();
+      final noNota = res['data']['no_nota'] as String? ?? '';
+      final metodeBayar = res['data']['metode_bayar'] as String? ?? 'cash';
+      final grandTotal = (res['data']['grand_total'] as num?)?.toDouble() ?? 0;
+      final jumlahBayar =
+          (res['data']['jumlah_bayar'] as num?)?.toDouble() ?? grandTotal;
+      final kembalian = (res['data']['kembalian'] as num?)?.toDouble() ?? 0;
+      if (trxId != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NotaScreen(
+              transaksiId: trxId,
+              noNota: noNota,
+              metodeBayar: metodeBayar,
+              grandTotal: grandTotal,
+              jumlahBayar: jumlahBayar,
+              kembalian: kembalian,
+            ),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Nota tidak ditemukan untuk servis ini'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
   Future<void> _hapusSparepart(int partId) async {
     final res = await KasirService.instance.hapusSparepart(partId);
     if (!mounted) return;
@@ -775,22 +820,42 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
               ),
             ),
           if (status == 'selesai')
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(children: [
-                Icon(Icons.check_circle, color: Colors.green.shade700),
-                const SizedBox(width: 10),
-                Text('Pembayaran sudah selesai',
-                    style: TextStyle(
-                        color: Colors.green.shade700,
-                        fontWeight: FontWeight.bold)),
-              ]),
+            Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.check_circle, color: Colors.green.shade700),
+                    const SizedBox(width: 10),
+                    Text('Pembayaran sudah selesai',
+                        style: TextStyle(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _lihatNota(),
+                    icon: const Icon(Icons.receipt_long),
+                    label: const Text('Lihat & Cetak Nota'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.indigo.shade700,
+                      side: BorderSide(color: Colors.indigo.shade300),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
             ),
           const SizedBox(height: 8),
         ],
@@ -1198,6 +1263,10 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
   double _kembalian = 0;
   bool _submitting = false;
 
+  // Foto bukti transfer
+  File? _fotoBukti;
+  bool _uploadingFoto = false;
+
   @override
   void dispose() {
     _bayarCtrl.dispose();
@@ -1209,6 +1278,28 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
             _bayarCtrl.text.replaceAll('.', '').replaceAll(',', '')) ??
         0;
     setState(() => _kembalian = bayar - widget.grandTotal);
+  }
+
+  Future<void> _pilihFotoBukti() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _fotoBukti = File(picked.path));
+    }
+  }
+
+  Future<void> _ambilFotoKamera() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _fotoBukti = File(picked.path));
+    }
   }
 
   Future<void> _konfirmasiBayar() async {
@@ -1223,6 +1314,15 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
         ));
         return;
       }
+    }
+
+    // Transfer wajib foto bukti
+    if (_metodeBayar == 'transfer' && _fotoBukti == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Harap lampirkan foto bukti transfer terlebih dahulu'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
     }
 
     final ok = await showDialog<bool>(
@@ -1262,6 +1362,7 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
             widget.grandTotal)
         : widget.grandTotal;
 
+    // Proses pembayaran
     final res = await KasirService.instance.prosesBayar({
       'servis_id': widget.servisId,
       'tipe': 'servis',
@@ -1270,16 +1371,58 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
       'diskon': 0,
     });
     if (!mounted) return;
-    setState(() => _submitting = false);
 
     final berhasil = res['success'] == true;
+
+    // Upload foto bukti jika transfer & pembayaran berhasil
+    if (berhasil && _metodeBayar == 'transfer' && _fotoBukti != null) {
+      setState(() => _uploadingFoto = true);
+      final transaksiId = res['data']?['transaksi_id'] as int?;
+      if (transaksiId != null) {
+        await KasirService.instance.uploadBuktiBayar(
+          transaksiId: transaksiId,
+          foto: _fotoBukti!,
+        );
+      }
+      if (mounted) setState(() => _uploadingFoto = false);
+    }
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(res['message'] ??
           (berhasil ? 'Pembayaran berhasil' : 'Gagal memproses pembayaran')),
       backgroundColor: berhasil ? Colors.green : Colors.red,
     ));
-    if (berhasil) {
-      Navigator.pop(context);
+
+    // Tampilkan nota setelah pembayaran berhasil
+    if (berhasil && mounted) {
+      final transaksiId = res['data']?['transaksi_id'] as int?;
+      if (transaksiId != null) {
+        await Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NotaScreen(
+              transaksiId: transaksiId,
+              noNota: res['data']?['no_nota'] as String? ?? '',
+              metodeBayar: _metodeBayar,
+              grandTotal: widget.grandTotal,
+              jumlahBayar: _metodeBayar == 'cash'
+                  ? (double.tryParse(_bayarCtrl.text
+                          .replaceAll('.', '')
+                          .replaceAll(',', '')) ??
+                      widget.grandTotal)
+                  : widget.grandTotal,
+              kembalian: _metodeBayar == 'cash'
+                  ? _kembalian.clamp(0, double.infinity)
+                  : 0,
+            ),
+          ),
+        );
+      } else {
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -1297,7 +1440,7 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
             16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
         child: Column(
           children: [
-            // Ringkasan biaya
+            // ── Ringkasan biaya ───────────────────────────
             Card(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -1319,7 +1462,7 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Metode bayar
+            // ── Metode bayar ──────────────────────────────
             Card(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -1340,6 +1483,7 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
                           _metodeBayar,
                           () => setState(() {
                                 _metodeBayar = 'cash';
+                                _fotoBukti = null;
                                 _hitungKembalian();
                               })),
                       const SizedBox(width: 12),
@@ -1348,8 +1492,13 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
                           'Transfer',
                           Icons.account_balance,
                           _metodeBayar,
-                          () => setState(() => _metodeBayar = 'transfer')),
+                          () => setState(() {
+                                _metodeBayar = 'transfer';
+                                _bayarCtrl.clear();
+                              })),
                     ]),
+
+                    // ── Input cash ────────────────────────
                     if (_metodeBayar == 'cash') ...[
                       const SizedBox(height: 16),
                       TextField(
@@ -1398,26 +1547,98 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
                         ),
                       ],
                     ],
+
+                    // ── Upload bukti transfer ─────────────
+                    if (_metodeBayar == 'transfer') ...[
+                      const SizedBox(height: 16),
+                      const Text('Bukti Transfer',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      if (_fotoBukti != null) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            _fotoBukti!,
+                            height: 180,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _fotoBukti = null),
+                          icon: const Icon(Icons.delete_outline,
+                              color: Colors.red),
+                          label: const Text('Hapus foto',
+                              style: TextStyle(color: Colors.red)),
+                        ),
+                      ] else ...[
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _ambilFotoKamera,
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Kamera'),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pilihFotoBukti,
+                              icon: const Icon(Icons.photo_library),
+                              label: const Text('Galeri'),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 6),
+                        Text(
+                          '* Foto bukti transfer wajib dilampirkan',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.orange.shade700),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
 
+            // ── Tombol konfirmasi ─────────────────────────
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton.icon(
-                onPressed: _submitting ? null : _konfirmasiBayar,
-                icon: _submitting
+                onPressed:
+                    (_submitting || _uploadingFoto) ? null : _konfirmasiBayar,
+                icon: (_submitting || _uploadingFoto)
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2.5))
-                    : const Icon(Icons.receipt_long),
-                label: const Text('Konfirmasi & Proses Bayar',
-                    style: TextStyle(fontSize: 16)),
+                    : const Icon(Icons.check_circle_outline),
+                label: Text(
+                  _uploadingFoto
+                      ? 'Mengunggah bukti...'
+                      : _submitting
+                          ? 'Memproses...'
+                          : 'Konfirmasi Pembayaran',
+                  style: const TextStyle(fontSize: 16),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
@@ -1485,5 +1706,651 @@ class _MetodeBtn extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Nota Screen ───────────────────────────────────────────
+class NotaScreen extends StatefulWidget {
+  final int transaksiId;
+  final String noNota;
+  final String metodeBayar;
+  final double grandTotal;
+  final double jumlahBayar;
+  final double kembalian;
+
+  const NotaScreen({
+    super.key,
+    required this.transaksiId,
+    required this.noNota,
+    required this.metodeBayar,
+    required this.grandTotal,
+    required this.jumlahBayar,
+    required this.kembalian,
+  });
+
+  @override
+  State<NotaScreen> createState() => _NotaScreenState();
+}
+
+class _NotaScreenState extends State<NotaScreen> {
+  Map<String, dynamic>? _nota;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNota();
+  }
+
+  Future<void> _loadNota() async {
+    final res = await KasirService.instance.getDetailNota(widget.transaksiId);
+    if (!mounted) return;
+    if (res['success'] == true) {
+      setState(() {
+        _nota = res['data'] as Map<String, dynamic>?;
+        _loading = false;
+      });
+    } else {
+      setState(() {
+        _error = res['message'] as String? ?? 'Gagal memuat nota';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text('Nota Pembayaran'),
+        backgroundColor: Colors.green.shade700,
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              // Kembali ke servis list (pop sampai servis screen)
+              Navigator.popUntil(context, (route) => route.isFirst);
+            },
+            icon: const Icon(Icons.home, color: Colors.white),
+            label: const Text('Selesai', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildFallbackNota()
+              : _buildNota(),
+      bottomNavigationBar: _loading
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: ElevatedButton.icon(
+                  onPressed: () => _cetakNota(),
+                  icon: const Icon(Icons.print),
+                  label:
+                      const Text('Cetak Nota', style: TextStyle(fontSize: 16)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildNota() {
+    final trx = _nota?['transaksi'] as Map<String, dynamic>? ?? {};
+    final items = (_nota?['items'] as List?) ?? [];
+    final bengkel = _nota?['bengkel'] as Map<String, dynamic>? ?? {};
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: _NotaCard(
+        trx: trx,
+        items: items,
+        bengkel: bengkel,
+        metodeBayar: widget.metodeBayar,
+        jumlahBayar: widget.jumlahBayar,
+        kembalian: widget.kembalian,
+      ),
+    );
+  }
+
+  Widget _buildFallbackNota() {
+    // Tampilkan nota minimal dari data yang sudah ada jika fetch gagal
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: _NotaCard(
+        trx: {
+          'no_nota': widget.noNota,
+          'grand_total': widget.grandTotal,
+          'metode_bayar': widget.metodeBayar,
+          'jumlah_bayar': widget.jumlahBayar,
+          'kembalian': widget.kembalian,
+          'tanggal': DateTime.now().toIso8601String(),
+        },
+        items: const [],
+        bengkel: const {},
+        metodeBayar: widget.metodeBayar,
+        jumlahBayar: widget.jumlahBayar,
+        kembalian: widget.kembalian,
+      ),
+    );
+  }
+
+  Future<void> _cetakNota() async {
+    if (_nota == null && _error != null) return;
+    setState(() => _loading = true);
+
+    try {
+      final trx = _nota?['transaksi'] as Map<String, dynamic>? ??
+          {
+            'no_nota': widget.noNota,
+            'grand_total': widget.grandTotal,
+            'metode_bayar': widget.metodeBayar,
+            'jumlah_bayar': widget.jumlahBayar,
+            'kembalian': widget.kembalian,
+            'tanggal': DateTime.now().toIso8601String(),
+          };
+      final items = (_nota?['items'] as List?) ?? [];
+      final bengkel = _nota?['bengkel'] as Map<String, dynamic>? ?? {};
+
+      final pdfBytes = await _generatePdf(
+        trx: trx,
+        items: items,
+        bengkel: bengkel,
+        metodeBayar: widget.metodeBayar,
+        jumlahBayar: widget.jumlahBayar,
+        kembalian: widget.kembalian,
+      );
+
+      final dir = await getTemporaryDirectory();
+      final noNota = (trx['no_nota'] as String? ?? 'nota').replaceAll('-', '_');
+      final file = File('${dir.path}/nota_$noNota.pdf');
+      await file.writeAsBytes(pdfBytes);
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: 'Nota Pembayaran ${trx['no_nota'] ?? ''}',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Gagal membuat nota: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
+  Future<List<int>> _generatePdf({
+    required Map<String, dynamic> trx,
+    required List items,
+    required Map<String, dynamic> bengkel,
+    required String metodeBayar,
+    required double jumlahBayar,
+    required double kembalian,
+  }) async {
+    final pdf = pw.Document();
+
+    // Helper format currency
+    String fmtCurr(double v) {
+      final s = v.toStringAsFixed(0);
+      final buf = StringBuffer();
+      int count = 0;
+      for (int i = s.length - 1; i >= 0; i--) {
+        if (count > 0 && count % 3 == 0) buf.write('.');
+        buf.write(s[i]);
+        count++;
+      }
+      return 'Rp ${buf.toString().split('').reversed.join()}';
+    }
+
+    String fmtTanggal(String raw) {
+      if (raw.isEmpty) return '-';
+      try {
+        final dt = DateTime.parse(raw);
+        const bulan = [
+          '',
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'Mei',
+          'Jun',
+          'Jul',
+          'Agu',
+          'Sep',
+          'Okt',
+          'Nov',
+          'Des'
+        ];
+        final jam =
+            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        return '${dt.day} ${bulan[dt.month]} ${dt.year}, $jam';
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    final namaBengkel =
+        bengkel['nama_bengkel'] as String? ?? 'Bengkel Ali Motor';
+    final alamat = bengkel['alamat'] as String? ?? '';
+    final noHpBengkel = bengkel['no_hp'] as String? ?? '';
+    final noNota = trx['no_nota'] as String? ?? '-';
+    final tanggal = fmtTanggal(trx['tanggal'] as String? ?? '');
+    final namaPelanggan = trx['nama_pelanggan'] as String? ?? '';
+    final noHpP = trx['no_hp'] as String? ?? '';
+    final merk = trx['merk'] as String? ?? '';
+    final model = trx['model'] as String? ?? '';
+    final noPolisi = trx['no_polisi'] as String? ?? '';
+    final jenisServis = trx['jenis_servis'] as String? ?? '';
+    final totalJasa = (trx['total_jasa'] as num?)?.toDouble() ?? 0;
+    final totalPart = (trx['total_sparepart'] as num?)?.toDouble() ?? 0;
+    final diskon = (trx['diskon'] as num?)?.toDouble() ?? 0;
+    final grandTotal = (trx['grand_total'] as num?)?.toDouble() ?? jumlahBayar;
+
+    final divider = pw.Divider(thickness: 0.5, color: PdfColors.grey400);
+    const thin = pw.TextStyle(fontSize: 9, color: PdfColors.grey700);
+    final bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
+    final titleStyle =
+        pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold);
+    final totalStyle =
+        pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold);
+
+    pw.Widget row2(String l, String r, {pw.TextStyle? style}) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(l, style: style ?? thin),
+            pw.Text(r, style: style ?? thin),
+          ],
+        );
+
+    pdf.addPage(pw.Page(
+      pageFormat: const PdfPageFormat(
+        80 * PdfPageFormat.mm, // lebar kertas thermal 80mm
+        double.infinity, // tinggi auto
+        marginAll: 6 * PdfPageFormat.mm,
+      ),
+      build: (ctx) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          // Header
+          pw.Text(namaBengkel,
+              style: titleStyle, textAlign: pw.TextAlign.center),
+          if (alamat.isNotEmpty)
+            pw.Text(alamat, style: thin, textAlign: pw.TextAlign.center),
+          if (noHpBengkel.isNotEmpty)
+            pw.Text('Telp: $noHpBengkel',
+                style: thin, textAlign: pw.TextAlign.center),
+          pw.SizedBox(height: 4),
+          divider,
+
+          // No nota & tanggal
+          row2('No. Nota', noNota),
+          pw.SizedBox(height: 2),
+          row2('Tanggal', tanggal),
+          pw.SizedBox(height: 2),
+          divider,
+
+          // Pelanggan & kendaraan
+          if (namaPelanggan.isNotEmpty) ...[
+            row2('Pelanggan', namaPelanggan),
+            if (noHpP.isNotEmpty) row2('No. HP', noHpP),
+          ],
+          if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
+            row2('Kendaraan', '$merk $model • $noPolisi'),
+          if (jenisServis.isNotEmpty) row2('Jenis Servis', jenisServis),
+          pw.SizedBox(height: 2),
+          divider,
+
+          // Item sparepart
+          if (items.isNotEmpty) ...[
+            pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text('Rincian Sparepart', style: bold),
+            ),
+            pw.SizedBox(height: 3),
+            ...items.map((item) {
+              final nama = item['nama'] as String? ?? '';
+              final jumlah = (item['jumlah'] as num?)?.toInt() ?? 0;
+              final satuan = item['satuan'] as String? ?? '';
+              final harga = (item['harga_jual'] as num?)?.toDouble() ?? 0;
+              final subtotal = (item['subtotal'] as num?)?.toDouble() ?? 0;
+              return pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 3),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Expanded(child: pw.Text(nama, style: bold)),
+                        pw.Text(fmtCurr(subtotal), style: bold),
+                      ],
+                    ),
+                    pw.Text('$jumlah $satuan × ${fmtCurr(harga)}', style: thin),
+                  ],
+                ),
+              );
+            }),
+            divider,
+          ],
+
+          // Biaya
+          if (totalJasa > 0) row2('Biaya Jasa', fmtCurr(totalJasa)),
+          if (totalPart > 0) row2('Biaya Part', fmtCurr(totalPart)),
+          if (diskon > 0) row2('Diskon', '- ${fmtCurr(diskon)}'),
+          divider,
+          row2('TOTAL', fmtCurr(grandTotal), style: totalStyle),
+          pw.SizedBox(height: 3),
+          row2(
+              'Metode Bayar', metodeBayar == 'cash' ? 'Cash' : 'Transfer Bank'),
+          if (metodeBayar == 'cash') ...[
+            row2('Jumlah Bayar', fmtCurr(jumlahBayar)),
+            row2('Kembalian', fmtCurr(kembalian),
+                style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.blue700)),
+          ],
+          pw.SizedBox(height: 8),
+          divider,
+          pw.SizedBox(height: 4),
+          pw.Text('-- Pembayaran Berhasil --',
+              style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.green700),
+              textAlign: pw.TextAlign.center),
+          pw.SizedBox(height: 2),
+          pw.Text('Terima kasih telah mempercayakan kendaraan Anda!',
+              style: thin, textAlign: pw.TextAlign.center),
+        ],
+      ),
+    ));
+
+    return pdf.save();
+  }
+}
+
+class _NotaCard extends StatelessWidget {
+  final Map<String, dynamic> trx;
+  final List items;
+  final Map<String, dynamic> bengkel;
+  final String metodeBayar;
+  final double jumlahBayar;
+  final double kembalian;
+
+  const _NotaCard({
+    required this.trx,
+    required this.items,
+    required this.bengkel,
+    required this.metodeBayar,
+    required this.jumlahBayar,
+    required this.kembalian,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final namaBengkel =
+        bengkel['nama_bengkel'] as String? ?? 'Bengkel Ali Motor';
+    final alamat = bengkel['alamat'] as String? ?? '';
+    final noHp = bengkel['no_hp'] as String? ?? '';
+
+    final noNota = trx['no_nota'] as String? ?? '-';
+    final tanggalRaw = trx['tanggal'] as String? ?? '';
+    final tanggalFmt = _formatTanggal(tanggalRaw);
+    final namaPelanggan = trx['nama_pelanggan'] as String? ?? '-';
+    final noHpPelanggan = trx['no_hp'] as String? ?? '-';
+    final merk = trx['merk'] as String? ?? '';
+    final model = trx['model'] as String? ?? '';
+    final noPolisi = trx['no_polisi'] as String? ?? '';
+    final jenisServis = trx['jenis_servis'] as String? ?? '';
+    final totalJasa = (trx['total_jasa'] as num?)?.toDouble() ?? 0;
+    final totalSparepart = (trx['total_sparepart'] as num?)?.toDouble() ?? 0;
+    final diskon = (trx['diskon'] as num?)?.toDouble() ?? 0;
+    final grandTotal = (trx['grand_total'] as num?)?.toDouble() ?? jumlahBayar;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header bengkel
+            Center(
+              child: Column(
+                children: [
+                  Icon(Icons.build_circle,
+                      size: 40, color: Colors.indigo.shade700),
+                  const SizedBox(height: 6),
+                  Text(namaBengkel,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 18)),
+                  if (alamat.isNotEmpty)
+                    Text(alamat,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600)),
+                  if (noHp.isNotEmpty)
+                    Text('Telp: $noHp',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Divider(thickness: 1.5),
+
+            // No nota & tanggal
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('No. Nota',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text(noNota,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Tanggal',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text(tanggalFmt, style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(),
+
+            // Info pelanggan & kendaraan
+            if (namaPelanggan != '-') ...[
+              _row(Icons.person, 'Pelanggan', namaPelanggan),
+              if (noHpPelanggan != '-')
+                _row(Icons.phone, 'No. HP', noHpPelanggan),
+            ],
+            if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
+              _row(Icons.two_wheeler, 'Kendaraan',
+                  '$merk $model • $noPolisi'.trim()),
+            if (jenisServis.isNotEmpty)
+              _row(Icons.build, 'Jenis Servis', jenisServis),
+            const SizedBox(height: 8),
+            const Divider(),
+
+            // Rincian item sparepart
+            if (items.isNotEmpty) ...[
+              const Text('Rincian Sparepart',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              ...items.map((item) {
+                final nama = item['nama'] as String? ?? '';
+                final jumlah = (item['jumlah'] as num?)?.toInt() ?? 0;
+                final satuan = item['satuan'] as String? ?? '';
+                final harga = (item['harga_jual'] as num?)?.toDouble() ?? 0;
+                final subtotal = (item['subtotal'] as num?)?.toDouble() ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(nama,
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w500)),
+                            Text(
+                                '$jumlah $satuan × ${FormatHelper.currency(harga)}',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ),
+                      Text(FormatHelper.currency(subtotal),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                );
+              }),
+              const Divider(),
+            ],
+
+            // Biaya jasa
+            if (totalJasa > 0)
+              _totalRow('Biaya Jasa', FormatHelper.currency(totalJasa)),
+            if (totalSparepart > 0)
+              _totalRow('Biaya Part', FormatHelper.currency(totalSparepart)),
+            if (diskon > 0)
+              _totalRow('Diskon', '- ${FormatHelper.currency(diskon)}',
+                  color: Colors.green),
+            const Divider(thickness: 1.5),
+            _totalRow('TOTAL', FormatHelper.currency(grandTotal), bold: true),
+            const SizedBox(height: 8),
+
+            // Metode bayar
+            _totalRow('Metode Bayar',
+                metodeBayar == 'cash' ? 'Cash' : 'Transfer Bank'),
+            if (metodeBayar == 'cash') ...[
+              _totalRow('Jumlah Bayar', FormatHelper.currency(jumlahBayar)),
+              _totalRow('Kembalian', FormatHelper.currency(kembalian),
+                  color: Colors.blue.shade700),
+            ],
+            const SizedBox(height: 16),
+
+            // Footer
+            Center(
+              child: Column(
+                children: [
+                  const Divider(),
+                  const SizedBox(height: 6),
+                  Icon(Icons.check_circle,
+                      color: Colors.green.shade600, size: 32),
+                  const SizedBox(height: 4),
+                  Text('Pembayaran Berhasil',
+                      style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                  const SizedBox(height: 4),
+                  Text('Terima kasih telah mempercayakan kendaraan Anda!',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 15, color: Colors.grey.shade500),
+            const SizedBox(width: 6),
+            SizedBox(
+                width: 80,
+                child: Text(label,
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade600))),
+            Expanded(
+                child: Text(value,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500))),
+          ],
+        ),
+      );
+
+  Widget _totalRow(String label, String value,
+          {bool bold = false, Color? color}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: bold ? 14 : 13,
+                    color: color ?? Colors.grey.shade700,
+                    fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+            Text(value,
+                style: TextStyle(
+                    fontSize: bold ? 15 : 13,
+                    color: color ?? (bold ? Colors.black : Colors.black87),
+                    fontWeight: bold ? FontWeight.bold : FontWeight.w500)),
+          ],
+        ),
+      );
+
+  String _formatTanggal(String raw) {
+    if (raw.isEmpty) return '-';
+    try {
+      final dt = DateTime.parse(raw);
+      final bulan = [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'Mei',
+        'Jun',
+        'Jul',
+        'Agu',
+        'Sep',
+        'Okt',
+        'Nov',
+        'Des'
+      ];
+      final jam =
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      return '${dt.day} ${bulan[dt.month]} ${dt.year}, $jam';
+    } catch (_) {
+      return raw;
+    }
   }
 }
