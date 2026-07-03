@@ -163,6 +163,13 @@ class KasirService {
         'mekanik_id': mekanikId,
       });
 
+  Future<Map<String, dynamic>> updateJenisServis(int servisId,
+          {required int jenisServisId}) =>
+      _put('${AppConstants.baseUrl}/kasir/servis.php?id=$servisId', {
+        'action': 'update_jenis_servis',
+        'jenis_servis_id': jenisServisId,
+      });
+
   Future<Map<String, dynamic>> selesaiDiagnosa({
     required int servisId,
     required bool importRequest,
@@ -178,11 +185,15 @@ class KasirService {
     required int servisId,
     required int sparepartId,
     required int jumlah,
+    // 'rekomendasi' = perlu persetujuan pelanggan dulu (status_persetujuan = menunggu)
+    // 'manual'      = langsung disetujui tanpa konfirmasi pelanggan
+    String sumber = 'rekomendasi',
   }) =>
       _post('${AppConstants.baseUrl}/kasir/servis.php', {
         'servis_id': servisId,
         'sparepart_id': sparepartId,
         'jumlah': jumlah,
+        'sumber': sumber,
       });
 
   Future<Map<String, dynamic>> hapusSparepart(int partId) =>

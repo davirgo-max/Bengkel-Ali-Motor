@@ -33,18 +33,18 @@ class OwnerService {
     }
   }
 
-  Future<Map<String, dynamic>> _put(
-      String url, Map<String, dynamic> body) async {
-    try {
-      final res = await http
-          .put(Uri.parse(url),
-              headers: await _headers(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 10));
-      return jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (e) {
-      return {'success': false, 'message': 'Koneksi gagal: $e'};
-    }
-  }
+  // Future<Map<String, dynamic>> _put(
+  //     String url, Map<String, dynamic> body) async {
+  //   try {
+  //     final res = await http
+  //         .put(Uri.parse(url),
+  //             headers: await _headers(), body: jsonEncode(body))
+  //         .timeout(const Duration(seconds: 10));
+  //     return jsonDecode(res.body) as Map<String, dynamic>;
+  //   } catch (e) {
+  //     return {'success': false, 'message': 'Koneksi gagal: $e'};
+  //   }
+  // }
 
   // ── DASHBOARD ─────────────────────────────────────────
   Future<DashboardOwnerData?> getDashboard({String? tanggal}) async {

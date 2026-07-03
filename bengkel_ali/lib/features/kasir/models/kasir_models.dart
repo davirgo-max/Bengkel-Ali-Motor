@@ -194,6 +194,7 @@ class DetailServisModel {
   final Map<String, dynamic> servis;
   final List<ServisSparepart> sparepart;
   final List<MekanikModel> mekanikList;
+  final List<Map<String, dynamic>> jenisServisList;
   final double totalJasa, totalPart, grandTotal;
   final bool adaMenungguPersetujuan;
 
@@ -201,6 +202,7 @@ class DetailServisModel {
     required this.servis,
     required this.sparepart,
     required this.mekanikList,
+    required this.jenisServisList,
     required this.totalJasa,
     required this.totalPart,
     required this.grandTotal,
@@ -215,6 +217,12 @@ class DetailServisModel {
             .toList(),
         mekanikList: (j['mekanik_list'] as List)
             .map((e) => MekanikModel.fromJson(e))
+            .toList(),
+        jenisServisList: (j['jenis_servis_list'] as List? ?? [])
+            .map((e) => {
+                  ...e as Map<String, dynamic>,
+                  'id': _parseInt(e['id']),
+                })
             .toList(),
         totalJasa: _parseDouble(j['total_jasa']),
         totalPart: _parseDouble(j['total_part']),

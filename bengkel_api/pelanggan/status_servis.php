@@ -87,7 +87,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         SELECT s.id, s.status, s.waktu_mulai, s.waktu_selesai,
                b.no_booking, b.tanggal_servis,
                k.merk, k.model, k.no_polisi,
-               js.nama AS jenis_servis
+               js.nama AS jenis_servis,
+               (SELECT COUNT(*) > 0
+                FROM servis_sparepart ss
+                WHERE ss.servis_id = s.id
+                AND ss.status_persetujuan = 'menunggu'
+               ) AS ada_menunggu_persetujuan
         FROM servis s
         JOIN booking b    ON b.id = s.booking_id
         JOIN kendaraan k  ON k.id = b.kendaraan_id

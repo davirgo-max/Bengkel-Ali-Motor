@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -312,6 +311,7 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
   // Form diagnosa & mekanik
   final _diagnosaCtrl = TextEditingController();
   int? _selectedMekanikId;
+  int? _selectedJenisServisId;
   bool _savingInfo = false;
 
   // Status update
@@ -345,6 +345,9 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
         _selectedMekanikId = data.servis['mekanik_id'] != null
             ? int.tryParse(data.servis['mekanik_id'].toString())
             : null;
+        _selectedJenisServisId = data.servis['jenis_servis_id'] != null
+            ? int.tryParse(data.servis['jenis_servis_id'].toString())
+            : null;
         _loading = false;
       });
     } else {
@@ -371,6 +374,15 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
 
   Future<void> _simpanInfo() async {
     setState(() => _savingInfo = true);
+
+    // Update jenis servis jika berubah (terpisah karena beda tabel di API)
+    if (_selectedJenisServisId != null) {
+      await KasirService.instance.updateJenisServis(
+        widget.servisId,
+        jenisServisId: _selectedJenisServisId!,
+      );
+    }
+
     final res = await KasirService.instance.updateInfoServis(
       widget.servisId,
       diagnosa: _diagnosaCtrl.text.trim(),
@@ -701,6 +713,30 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                // Dropdown jenis servis — kasir bisa isi/ubah saat diagnosa
+                // (termasuk jika pelanggan pilih "belum tahu" saat booking)
+                DropdownButtonFormField<int?>(
+                  initialValue: _selectedJenisServisId,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Jenis Servis',
+                    prefixIcon: const Icon(Icons.build_circle_outlined),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                        value: null, child: Text('-- Belum ditentukan --')),
+                    ...d.jenisServisList.map((j) => DropdownMenuItem<int?>(
+                          value: j['id'] as int?,
+                          child: Text(j['nama'] as String? ?? ''),
+                        )),
+                  ],
+                  onChanged: sudahSelesai
+                      ? null
+                      : (v) => setState(() => _selectedJenisServisId = v),
+                ),
+                const SizedBox(height: 10),
                 DropdownButtonFormField<int?>(
                   initialValue: _selectedMekanikId,
                   isExpanded: true,
@@ -956,12 +992,13 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _TambahSparepartSheet(
-        onTambah: (id, jumlah) async {
+        onTambah: (id, jumlah, perluPersetujuan) async {
           Navigator.pop(context);
           final res = await KasirService.instance.tambahSparepart(
             servisId: widget.servisId,
             sparepartId: id,
             jumlah: jumlah,
+            sumber: perluPersetujuan ? 'rekomendasi' : 'manual',
           );
           if (!mounted) return;
           final ok = res['success'] == true;
@@ -1071,7 +1108,7 @@ class _SectionCard extends StatelessWidget {
 
 // ── Tambah Sparepart Sheet ────────────────────────────────
 class _TambahSparepartSheet extends StatefulWidget {
-  final void Function(int id, int jumlah) onTambah;
+  final void Function(int id, int jumlah, bool perluPersetujuan) onTambah;
   const _TambahSparepartSheet({required this.onTambah});
   @override
   State<_TambahSparepartSheet> createState() => _TambahSparepartSheetState();
@@ -1083,6 +1120,7 @@ class _TambahSparepartSheetState extends State<_TambahSparepartSheet> {
   SparepartCariModel? _selected;
   List<SparepartCariModel> _results = [];
   bool _searching = false;
+  bool _perluPersetujuan = true; // default: perlu konfirmasi pelanggan dulu
 
   @override
   void dispose() {
@@ -1221,11 +1259,28 @@ class _TambahSparepartSheetState extends State<_TambahSparepartSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            CheckboxListTile(
+              value: _perluPersetujuan,
+              onChanged: (v) => setState(() => _perluPersetujuan = v ?? true),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Perlu persetujuan pelanggan',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              subtitle: Text(
+                _perluPersetujuan
+                    ? 'Pelanggan akan menerima notifikasi untuk menyetujui sparepart ini'
+                    : 'Sparepart langsung disetujui tanpa konfirmasi pelanggan',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () => widget.onTambah(_selected!.id, _jumlah),
+                onPressed: () =>
+                    widget.onTambah(_selected!.id, _jumlah, _perluPersetujuan),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.indigo.shade700,
                   foregroundColor: Colors.white,

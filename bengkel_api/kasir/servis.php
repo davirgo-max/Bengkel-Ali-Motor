@@ -84,15 +84,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $mekanik = [];
         while ($r = $res->fetch_assoc()) $mekanik[] = $r;
 
+        // List jenis servis aktif (untuk dropdown kasir saat diagnosa)
+        $resJs      = $db->query("SELECT id, nama, harga_jasa, estimasi_menit FROM jenis_servis WHERE is_aktif=1 ORDER BY nama");
+        $jenisList  = [];
+        while ($r = $resJs->fetch_assoc()) $jenisList[] = $r;
+
         $totalJasa = (float)($servis['harga_jasa'] ?? 0);
 
         responseOk('OK', [
-            'servis'          => $servis,
-            'sparepart'       => $parts,
-            'mekanik_list'    => $mekanik,
-            'total_jasa'      => $totalJasa,
-            'total_part'      => $totalPart,
-            'grand_total'     => $totalJasa + $totalPart,
+            'servis'                   => $servis,
+            'sparepart'                => $parts,
+            'mekanik_list'             => $mekanik,
+            'jenis_servis_list'        => $jenisList,
+            'total_jasa'               => $totalJasa,
+            'total_part'               => $totalPart,
+            'grand_total'              => $totalJasa + $totalPart,
             'ada_menunggu_persetujuan' => $adaMenunggu,
         ]);
     }
@@ -229,6 +235,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         $stmt->execute(); $stmt->close();
         $db->close();
         responseOk('Data servis diperbarui');
+    }
+
+    // ── Update jenis servis (kasir bisa ubah/isi saat diagnosa) ──
+    if ($action === 'update_jenis_servis') {
+        $jenisServisId = !empty($body['jenis_servis_id']) ? (int)$body['jenis_servis_id'] : null;
+
+        // Update di tabel booking karena jenis_servis_id ada di sana
+        $stmt = $db->prepare("
+            UPDATE booking SET jenis_servis_id=?
+            WHERE id=(SELECT booking_id FROM servis WHERE id=? LIMIT 1)
+        ");
+        $stmt->bind_param('ii', $jenisServisId, $id);
+        $stmt->execute(); $stmt->close();
+        $db->close();
+        responseOk('Jenis servis diperbarui');
     }
 
     // ── Selesai diagnosa: import request + tentukan percabangan ──
@@ -395,6 +416,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$stmt->execute()) responseError('Gagal menambah sparepart', 500);
     $newId = $stmt->insert_id;
     $stmt->close();
+
+    // ── Notifikasi FCM: sparepart baru perlu persetujuan pelanggan ──
+    // Dikirim langsung di sini (bukan hanya di selesai_diagnosa) supaya
+    // sparepart yang ditambahkan kasir kapan pun (diagnosa, dikerjakan, dst)
+    // tetap memberi tahu pelanggan.
+    if ($statusPersetujuan === 'menunggu') {
+        $stmtD = $db->prepare("
+            SELECT b.pelanggan_id, b.id AS booking_id, k.merk, k.model, k.no_polisi
+            FROM   servis s
+            JOIN   booking b   ON b.id = s.booking_id
+            JOIN   kendaraan k ON k.id = b.kendaraan_id
+            WHERE  s.id = ?
+            LIMIT  1
+        ");
+        $stmtD->bind_param('i', $servisId);
+        $stmtD->execute();
+        $sDetail = $stmtD->get_result()->fetch_assoc();
+        $stmtD->close();
+
+        if ($sDetail) {
+            $kendaraan = "{$sDetail['merk']} {$sDetail['model']} ({$sDetail['no_polisi']})";
+            kirimNotifikasi(
+                $db,
+                (int)$sDetail['pelanggan_id'],
+                'servis_sparepart',
+                'Konfirmasi Sparepart Diperlukan 🔧',
+                "Sparepart {$sp['nama']} diusulkan untuk kendaraan $kendaraan. Buka aplikasi untuk menyetujui atau menolak.",
+                (int)$sDetail['booking_id'],
+                $servisId
+            );
+        }
+    }
+    // ─────────────────────────────────────────────────────────────
+
     $db->close();
 
     responseOk('Sparepart ditambahkan', [

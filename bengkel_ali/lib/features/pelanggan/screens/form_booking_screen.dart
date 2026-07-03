@@ -229,6 +229,32 @@ class _FormBookingScreenState extends State<FormBookingScreen> {
   double get _totalEstimasiPart =>
       _keranjangPart.fold(0, (sum, e) => sum + e.subtotal);
 
+  Future<void> _konfirmasiDanSubmit() async {
+    final konfirmasi = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Konfirmasi Booking'),
+        content: const Text(
+          'Apakah kamu yakin ingin mengirim booking ini?\n\n'
+          '⚠️ Setiap pelanggan hanya dapat membuat 1 booking per hari. '
+          'Booking yang sudah dikirim tidak dapat diulang di hari yang sama, '
+          'meskipun dibatalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya, Kirim Booking'),
+          ),
+        ],
+      ),
+    );
+    if (konfirmasi == true) _submit();
+  }
+
   Future<void> _submit() async {
     if (_selectedKendaraan == null) {
       _snack('Pilih kendaraan terlebih dahulu');
@@ -592,7 +618,7 @@ class _FormBookingScreenState extends State<FormBookingScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _submitting ? null : _submit,
+                onPressed: _submitting ? null : _konfirmasiDanSubmit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue.shade700,
                   foregroundColor: Colors.white,

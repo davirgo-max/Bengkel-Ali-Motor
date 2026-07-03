@@ -3,6 +3,7 @@
 // Helper untuk proses penalti no-show — dipanggil dari kasir/booking
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/fcm_helper.php';
 
 /**
  * Tabel aturan blokir berdasarkan no-show dalam 14 hari:
@@ -119,6 +120,25 @@ function prosesNoShow(int $bookingId, string $dilakukanOleh = 'sistem'): array {
     $stmt->execute(); $stmt->close();
     $db->close();
 
+    // ── Notifikasi FCM: no-show & blokir ─────────────────────────────────
+    $dbNotif = getDB();
+    $pesanFcm = $diblokir
+        ? ($blokirHari === null
+            ? "Akun Anda diblokir PERMANEN karena $noshowDalam14 kali tidak hadir dalam 14 hari. Hubungi bengkel untuk informasi lebih lanjut."
+            : "Akun Anda diblokir selama $blokirHari hari karena tidak hadir tanpa konfirmasi. Blokir berakhir: $blokirSampai.")
+        : "Booking Anda ditandai tidak hadir (no-show). Ini adalah catatan ke-$noshowDalam14 dalam 14 hari. Mohon konfirmasi pembatalan lebih awal jika tidak bisa hadir.";
+
+    kirimNotifikasi(
+        $dbNotif,
+        $pelangganId,
+        'booking_dibatalkan',
+        $diblokir ? 'Akun Diblokir ⛔' : 'Booking Tidak Hadir ⚠️',
+        $pesanFcm,
+        $bookingId
+    );
+    $dbNotif->close();
+    // ─────────────────────────────────────────────────────────────────────
+
     $pesan = $diblokir
         ? ($blokirHari === null
             ? "Akun diblokir PERMANEN ($noshowDalam14 no-show dalam 14 hari)"
@@ -193,22 +213,21 @@ function cekStatusBlokir(int $pelangganId, mysqli $db): array {
  * - Maks 2 booking aktif sekaligus
  */
 function cekBatasBooking(int $pelangganId, mysqli $db): array {
-    // Cek booking hari ini
+    // Cek booking hari ini menggunakan last_booking_date
+    // Kolom ini di-set saat booking berhasil dibuat dan tidak di-reset saat dibatalkan,
+    // sehingga pembatalan tidak memberi kesempatan booking ulang di hari yang sama.
     $stmt = $db->prepare("
-        SELECT COUNT(*) AS total FROM booking
-        WHERE pelanggan_id = ?
-        AND DATE(created_at) = CURDATE()
-        AND status NOT IN ('dibatalkan')
+        SELECT last_booking_date FROM pelanggan WHERE id = ? LIMIT 1
     ");
     $stmt->bind_param('i', $pelangganId);
     $stmt->execute();
-    $hariIni = (int)$stmt->get_result()->fetch_assoc()['total'];
+    $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if ($hariIni >= 1) {
+    if ($row && $row['last_booking_date'] === date('Y-m-d')) {
         return [
             'boleh'  => false,
-            'alasan' => 'Kamu sudah membuat 1 booking hari ini. Maksimal 1 booking baru per hari.',
+            'alasan' => 'Kamu sudah membuat booking hari ini. Maksimal 1 booking baru per hari, meskipun booking sebelumnya dibatalkan.',
         ];
     }
 

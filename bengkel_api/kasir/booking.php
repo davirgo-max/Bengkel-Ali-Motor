@@ -476,9 +476,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $hargaJual = (float)$spRow['harga_jual'];
             $subtotal  = $hargaJual * $jumlah;
 
-            $stmtIns->bind_param('iidd', $servisId, $spId, $jumlah, $hargaJual, $subtotal);
-            // bind_param tidak support campuran i & d sekaligus untuk int jumlah, perbaiki types:
-            // servis_id(i), sparepart_id(i), jumlah(i), harga_jual(d), subtotal(d)
             $stmtIns->bind_param('iiidd', $servisId, $spId, $jumlah, $hargaJual, $subtotal);
             if ($stmtIns->execute()) {
                 $sparepartInserted++;
