@@ -1,7 +1,3 @@
-# constants (ignore jika hanya mengubah ip)
-bengkel_ali/lib/core/constants/app_constants.dart
-bengkel_web/lib/core/constants/app_constants.dart
-
 # Firebase
 bengkel_ali/android/app/google-services.json
 
