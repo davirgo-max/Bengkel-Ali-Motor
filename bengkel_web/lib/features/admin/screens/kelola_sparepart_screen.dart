@@ -391,7 +391,7 @@ class _FotoThumb extends StatelessWidget {
             size: 18, color: Color(0xFFCCCCD8)),
       );
     }
-    final url = '${AppConstants.uploadUrl}/$fotoPath';
+    final url = '${AppConstants.uploadUrl}/sparepart/$fotoPath';
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: Image.network(
@@ -443,6 +443,7 @@ class _SparepartFormDialog extends StatefulWidget {
 class _SparepartFormDialogState extends State<_SparepartFormDialog> {
   late final TextEditingController _namaCtrl;
   late final TextEditingController _kodeCtrl;
+  late final TextEditingController _deskripsiCtrl;
   late final TextEditingController _satuanCtrl;
   late final TextEditingController _hargaBeliCtrl;
   late final TextEditingController _hargaJualCtrl;
@@ -466,6 +467,7 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
     final sp = widget.item;
     _namaCtrl = TextEditingController(text: sp?.nama);
     _kodeCtrl = TextEditingController(text: sp?.kode);
+    _deskripsiCtrl = TextEditingController(text: sp?.deskripsi ?? '');
     _satuanCtrl = TextEditingController(text: sp?.satuan ?? 'pcs');
     _hargaBeliCtrl = TextEditingController(
         text: sp != null ? '${sp.hargaBeli.toInt()}' : '');
@@ -481,6 +483,7 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
   void dispose() {
     _namaCtrl.dispose();
     _kodeCtrl.dispose();
+    _deskripsiCtrl.dispose();
     _satuanCtrl.dispose();
     _hargaBeliCtrl.dispose();
     _hargaJualCtrl.dispose();
@@ -538,6 +541,7 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
     final payload = {
       'nama': nama,
       'kode': kode,
+      'deskripsi': _deskripsiCtrl.text.trim(),
       'satuan':
           _satuanCtrl.text.trim().isEmpty ? 'pcs' : _satuanCtrl.text.trim(),
       'harga_beli': hargaBeli,
@@ -627,6 +631,19 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
                 Expanded(
                     child: _field('Kode', _kodeCtrl,
                         hint: 'Kode unik', required: true)),
+              ]),
+              const SizedBox(height: 14),
+
+              // ── Deskripsi
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const FieldLabel('Deskripsi'),
+                TextField(
+                  controller: _deskripsiCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'Deskripsi singkat sparepart (opsional)',
+                  ),
+                ),
               ]),
               const SizedBox(height: 14),
 
@@ -782,7 +799,7 @@ class _SparepartFormDialogState extends State<_SparepartFormDialog> {
       );
     }
     if (_adaFotoLama) {
-      final url = '${AppConstants.uploadUrl}/${widget.item!.foto}';
+      final url = '${AppConstants.uploadUrl}/sparepart/${widget.item!.foto}';
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.network(

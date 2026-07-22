@@ -15,8 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     responseError('Method tidak diizinkan', 405);
 }
 
-// Endpoint ini boleh diakses pelanggan saja
-requireRole('pelanggan');
+// Endpoint ini boleh diakses pelanggan, dan kasir (mode lihat saja --
+// info suku cadang di Aksi Cepat kasir memakai endpoint yang sama persis)
+requireRole('pelanggan', 'kasir');
 
 $db = getDB();
 

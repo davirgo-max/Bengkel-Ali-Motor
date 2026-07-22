@@ -20,6 +20,7 @@ class SparepartModel {
   final int id;
   final String kode;
   final String nama;
+  final String? deskripsi;
   final String satuan;
   final double hargaBeli;
   final double hargaJual;
@@ -35,6 +36,7 @@ class SparepartModel {
     required this.id,
     required this.kode,
     required this.nama,
+    this.deskripsi,
     required this.satuan,
     required this.hargaBeli,
     required this.hargaJual,
@@ -51,6 +53,7 @@ class SparepartModel {
         id: _int(j['id']),
         kode: _str(j['kode']),
         nama: _str(j['nama']),
+        deskripsi: j['deskripsi'] as String?,
         satuan: _str(j['satuan']),
         hargaBeli: _dbl(j['harga_beli']),
         hargaJual: _dbl(j['harga_jual']),

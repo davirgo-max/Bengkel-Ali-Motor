@@ -163,7 +163,13 @@ class _CatatPembelianTabState extends State<_CatatPembelianTab> {
           children: [
             Icon(Icons.inventory_2_outlined, color: AppColors.primary),
             SizedBox(width: 8),
-            Text('Konfirmasi Pembelian'),
+            // Dibungkus Expanded supaya teks judul tidak overflow di layar
+            // sempit -- sebelumnya Row tanpa Expanded memaksa Text tetap di
+            // lebar aslinya walau ruang tersisa tidak cukup.
+            Expanded(
+              child:
+                  Text('Konfirmasi Pembelian', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
         content: Text(

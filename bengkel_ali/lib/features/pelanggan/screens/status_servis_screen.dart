@@ -17,6 +17,10 @@ class _StatusServisScreenState extends State<StatusServisScreen> {
 
   static const _prioritasStatus = [
     'dikerjakan',
+    'diagnosa', // <-- sebelumnya tidak ada di daftar ini, jadi indexOf()
+    // mengembalikan -1 -> dianggap prioritas 999 (paling bawah, di bawah
+    // 'selesai' sekalipun). Ini penyebab servis yang baru masuk diagnosa
+    // selalu "hilang" ke bagian bawah list.
     'antrian',
     'menunggu_part',
     'selesai_servis',

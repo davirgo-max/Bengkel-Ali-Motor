@@ -79,6 +79,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $adaMenunggu = count(array_filter($parts, fn($p) =>
             $p['status_persetujuan'] === 'menunggu')) > 0;
 
+        // Request sparepart pelanggan yang BELUM diimpor ke servis ini --
+        // dipakai popup "Tentukan Sparepart" supaya kasir bisa pilih
+        // per-item (bukan cuma toggle impor semua-atau-tidak).
+        $stmt = $db->prepare("
+            SELECT bsr.sparepart_id, bsr.jumlah, bsr.harga_jual, bsr.subtotal,
+                   sp.nama, sp.satuan, sp.stok
+            FROM booking_sparepart_request bsr
+            JOIN sparepart sp ON sp.id = bsr.sparepart_id
+            WHERE bsr.booking_id = ?
+            AND bsr.status NOT IN ('ditolak')
+            AND NOT EXISTS (
+                SELECT 1 FROM servis_sparepart ss
+                WHERE ss.servis_id = ? AND ss.sparepart_id = bsr.sparepart_id
+            )
+        ");
+        $stmt->bind_param('ii', $servis['booking_id'], $id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $requestPending = [];
+        while ($r = $res->fetch_assoc()) $requestPending[] = $r;
+        $stmt->close();
+
         // List mekanik aktif
         $res     = $db->query("SELECT id, nama, spesialisasi FROM mekanik WHERE is_aktif=1 ORDER BY nama");
         $mekanik = [];
@@ -100,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'total_part'               => $totalPart,
             'grand_total'              => $totalJasa + $totalPart,
             'ada_menunggu_persetujuan' => $adaMenunggu,
+            'sparepart_request_pending' => $requestPending,
         ]);
     }
 
@@ -255,19 +278,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     // ── Selesai diagnosa: import request + tentukan percabangan ──
     // POST body: {
     //   action: 'selesai_diagnosa',
-    //   import_request: true|false,  // pakai request pelanggan?
+    //   import_sparepart_ids: [1,2,3],   // sparepart_id request pelanggan yang DIPILIH kasir untuk diimpor (per-item)
+    //   import_request: true|false,      // cara lama: impor SEMUA request (dipakai kalau import_sparepart_ids tidak dikirim)
+    //   konfirmasi_luar_aplikasi: true|false, // kasir sudah konfirmasi sparepart manual/rekomendasi ke pelanggan di luar app
     //   lanjut_ke: 'dikerjakan'|'menunggu_part'
     // }
     if ($action === 'selesai_diagnosa') {
-        $importRequest = !empty($body['import_request']);
-        $lanjutKe      = trim($body['lanjut_ke'] ?? '');
+        $importIds = isset($body['import_sparepart_ids']) && is_array($body['import_sparepart_ids'])
+            ? array_map('intval', $body['import_sparepart_ids'])
+            : null;
+        // Kompatibilitas mundur: kalau frontend lama masih kirim
+        // import_request boolean tanpa daftar spesifik, artinya impor semua.
+        $importAllLegacy         = $importIds === null && !empty($body['import_request']);
+        $konfirmasiLuarAplikasi  = !empty($body['konfirmasi_luar_aplikasi']);
+        $lanjutKe                = trim($body['lanjut_ke'] ?? '');
 
         if (!in_array($lanjutKe, ['dikerjakan', 'menunggu_part'])) {
             responseError('lanjut_ke harus dikerjakan atau menunggu_part');
         }
 
         // Ambil booking_id dari servis ini
-        $stmt = $db->prepare("SELECT booking_id FROM servis WHERE id=? LIMIT 1");
+        $stmt = $db->prepare("
+            SELECT s.booking_id, s.diagnosa, s.mekanik_id, b.jenis_servis_id
+            FROM servis s
+            JOIN booking b ON b.id = s.booking_id
+            WHERE s.id=? LIMIT 1
+        ");
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
@@ -275,8 +311,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         if (!$row) responseError('Servis tidak ditemukan', 404);
         $bookingId = (int)$row['booking_id'];
 
-        // Import sparepart request dari booking jika diminta
-        if ($importRequest) {
+        // Validasi: diagnosa, mekanik, dan jenis servis wajib diisi sebelum
+        // servis boleh dilanjutkan ke tahap berikutnya. Dicek di sini juga
+        // (bukan cuma di Flutter) supaya tidak bisa dilewati lewat panggilan
+        // API langsung.
+        if (trim((string)($row['diagnosa'] ?? '')) === '') {
+            responseError('Diagnosa wajib diisi sebelum melanjutkan servis');
+        }
+        if (empty($row['mekanik_id'])) {
+            responseError('Mekanik wajib dipilih sebelum melanjutkan servis');
+        }
+        if (empty($row['jenis_servis_id'])) {
+            responseError('Jenis servis wajib ditentukan sebelum melanjutkan servis');
+        }
+
+        // Import sparepart request dari booking jika diminta -- baik per-item
+        // (import_sparepart_ids) maupun cara lama (import semua)
+        if ($importIds !== null || $importAllLegacy) {
             // Ambil request yang belum ditolak dari booking ini
             $stmt = $db->prepare("
                 SELECT bsr.sparepart_id, bsr.jumlah, bsr.harga_jual, bsr.subtotal
@@ -290,10 +341,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             $stmt->close();
 
             foreach ($requests as $req) {
-                // Cek apakah sudah ada di servis_sparepart (hindari duplikat)
+                // Kalau kasir kirim daftar spesifik, hanya impor sparepart
+                // yang benar-benar dicentang -- request lain yang tidak
+                // dicentang dilewati (tidak ikut masuk ke servis).
+                if ($importIds !== null && !in_array((int)$req['sparepart_id'], $importIds, true)) {
+                    continue;
+                }
+                // Cek apakah sparepart ini SUDAH ada di servis, dari sumber
+                // MANA PUN (request maupun ditambah manual kasir lewat
+                // tombol "+"). Sebelumnya pengecekan ini dibatasi
+                // `AND sumber='request'`, jadi kalau kasir sudah menambah
+                // manual sparepart yang sama, import ini tetap menyisipkan
+                // baris baru untuk part yang identik -> muncul dobel.
                 $stmt = $db->prepare("
                     SELECT id FROM servis_sparepart
-                    WHERE servis_id=? AND sparepart_id=? AND sumber='request'
+                    WHERE servis_id=? AND sparepart_id=?
                     LIMIT 1
                 ");
                 $stmt->bind_param('ii', $id, $req['sparepart_id']);
@@ -302,9 +364,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
                 $stmt->close();
                 if ($existing) continue;
 
-                // status_persetujuan: jika lanjut ke dikerjakan = disetujui,
-                // jika menunggu_part = menunggu (perlu konfirmasi pelanggan lagi)
-                $statusPersetujuan = ($lanjutKe === 'dikerjakan') ? 'disetujui' : 'menunggu';
+                // Sparepart dari request pelanggan sendiri SELALU langsung
+                // 'disetujui', apapun lanjut_ke-nya -- pelanggan sudah
+                // memilihnya sendiri saat booking, jadi tidak perlu approve
+                // ulang di aplikasi. (Sebelumnya status ini ikut jadi
+                // 'menunggu' saat lanjut_ke=menunggu_part, yang bikin servis
+                // stuck menunggu approval untuk sesuatu yang sebenarnya
+                // sudah disetujui pelanggan sejak awal.)
+                $statusPersetujuan = 'disetujui';
 
                 $stmt = $db->prepare("
                     INSERT INTO servis_sparepart
@@ -326,6 +393,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             }
         }
 
+        // Cek apakah servis ini punya sparepart manual/rekomendasi dari
+        // kasir (di luar request pelanggan sendiri). Dipakai untuk (a)
+        // mengunci opsi "Tunggu Persetujuan Pelanggan" kalau sparepart-nya
+        // 100% dari request pelanggan sendiri -- tidak ada apa pun yang
+        // perlu di-approve ulang -- dan (b) untuk auto-approve di bawah.
+        $stmt = $db->prepare("
+            SELECT COUNT(*) AS jml FROM servis_sparepart
+            WHERE servis_id=? AND sumber IN ('manual','rekomendasi')
+        ");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $adaManualRekomendasi = (int)($stmt->get_result()->fetch_assoc()['jml'] ?? 0) > 0;
+        $stmt->close();
+
+        // Divalidasi di sini juga (bukan cuma dikunci di Flutter) supaya
+        // tidak bisa dilewati lewat panggilan API langsung.
+        if ($lanjutKe === 'menunggu_part' && !$adaManualRekomendasi) {
+            responseError('Tidak ada sparepart rekomendasi/manual dari kasir yang perlu disetujui pelanggan. Pilih "Langsung Kerjakan".');
+        }
+
         // Update status servis
         $now = date('Y-m-d H:i:s');
         $stmt = $db->prepare("
@@ -334,15 +421,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         $stmt->bind_param('ssi', $lanjutKe, $now, $id);
         $stmt->execute(); $stmt->close();
 
+        // Kalau kasir pilih "Langsung Kerjakan" dan sudah konfirmasi ke
+        // pelanggan di luar aplikasi (telepon/langsung di bengkel), semua
+        // sparepart manual/rekomendasi yang masih 'menunggu' di-auto-approve
+        // supaya servis tidak nyangkut menunggu approval in-app yang
+        // mungkin tidak akan pernah datang.
+        if ($lanjutKe === 'dikerjakan' && $konfirmasiLuarAplikasi) {
+            $stmt = $db->prepare("
+                UPDATE servis_sparepart SET status_persetujuan='disetujui'
+                WHERE servis_id=? AND status_persetujuan='menunggu'
+            ");
+            $stmt->bind_param('i', $id);
+            $stmt->execute(); $stmt->close();
+        }
+
         // ── Notifikasi FCM: sparepart perlu persetujuan ───
-        if ($lanjutKe === 'menunggu_part' && $importRequest) {
+        // Dikirim TEPAT saat status resmi pindah ke menunggu_part -- bukan
+        // saat sparepart di-input (baik dari import request maupun dari
+        // tombol "+" manual kasir). Alasannya: sebelum status ini di-set,
+        // kasir mungkin masih menambah part lain atau akhirnya malah pilih
+        // "langsung kerjakan" (skip menunggu_part) -- notifikasi yang
+        // dikirim lebih awal jadi prematur/tidak relevan buat pelanggan.
+        // Dihitung dari servis_sparepart langsung supaya mencakup SEMUA
+        // sumber (request maupun manual/rekomendasi kasir), bukan cuma
+        // yang berasal dari booking_sparepart_request.
+        if ($lanjutKe === 'menunggu_part') {
             $stmtD = $db->prepare("
                 SELECT b.pelanggan_id, b.no_booking, k.merk, k.model, k.no_polisi,
-                       COUNT(bsr.id) AS jml_part
+                       COUNT(ss.id) AS jml_part
                 FROM   servis s
                 JOIN   booking b   ON b.id = s.booking_id
                 JOIN   kendaraan k ON k.id = b.kendaraan_id
-                JOIN   booking_sparepart_request bsr ON bsr.booking_id = b.id AND bsr.status = 'menunggu'
+                JOIN   servis_sparepart ss ON ss.servis_id = s.id
+                                          AND ss.status_persetujuan = 'menunggu'
                 WHERE  s.id = ?
                 GROUP  BY b.pelanggan_id, b.no_booking, k.merk, k.model, k.no_polisi
                 LIMIT  1
@@ -405,50 +516,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         responseError("Stok {$sp['nama']} tidak cukup (tersisa {$sp['stok']})");
 
     $harga    = (float)$sp['harga_jual'];
-    $subtotal = $harga * $jumlah;
 
+    // Kalau sparepart ini SUDAH ada di servis (dari sumber mana pun --
+    // request maupun ditambah manual sebelumnya), gabung jumlahnya ke baris
+    // yang sudah ada, jangan bikin baris baru. Ini pasangan dari fix di
+    // action `selesai_diagnosa`: dua-duanya sama-sama mencegah 1 sparepart
+    // muncul dobel di servis yang sama.
     $stmt = $db->prepare("
-        INSERT INTO servis_sparepart
-          (servis_id, sparepart_id, jumlah, harga_jual, subtotal, sumber, status_persetujuan)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        SELECT id, jumlah, status_persetujuan FROM servis_sparepart
+        WHERE servis_id=? AND sparepart_id=? LIMIT 1
     ");
-    $stmt->bind_param('iiiidss', $servisId, $sparepartId, $jumlah, $harga, $subtotal, $sumber, $statusPersetujuan);
-    if (!$stmt->execute()) responseError('Gagal menambah sparepart', 500);
-    $newId = $stmt->insert_id;
+    $stmt->bind_param('ii', $servisId, $sparepartId);
+    $stmt->execute();
+    $existing = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    // ── Notifikasi FCM: sparepart baru perlu persetujuan pelanggan ──
-    // Dikirim langsung di sini (bukan hanya di selesai_diagnosa) supaya
-    // sparepart yang ditambahkan kasir kapan pun (diagnosa, dikerjakan, dst)
-    // tetap memberi tahu pelanggan.
-    if ($statusPersetujuan === 'menunggu') {
-        $stmtD = $db->prepare("
-            SELECT b.pelanggan_id, b.id AS booking_id, k.merk, k.model, k.no_polisi
-            FROM   servis s
-            JOIN   booking b   ON b.id = s.booking_id
-            JOIN   kendaraan k ON k.id = b.kendaraan_id
-            WHERE  s.id = ?
-            LIMIT  1
+    if ($existing) {
+        $jumlahBaru  = (int)$existing['jumlah'] + $jumlah;
+        $subtotalBaru = $harga * $jumlahBaru;
+        $stmt = $db->prepare("
+            UPDATE servis_sparepart
+            SET jumlah=?, harga_jual=?, subtotal=?
+            WHERE id=?
         ");
-        $stmtD->bind_param('i', $servisId);
-        $stmtD->execute();
-        $sDetail = $stmtD->get_result()->fetch_assoc();
-        $stmtD->close();
+        $stmt->bind_param('iddi', $jumlahBaru, $harga, $subtotalBaru, $existing['id']);
+        if (!$stmt->execute()) responseError('Gagal memperbarui jumlah sparepart', 500);
+        $stmt->close();
+        $newId    = (int)$existing['id'];
+        $subtotal = $subtotalBaru;
+        // Status persetujuan baris yang sudah ada TIDAK diturunkan jadi
+        // 'disetujui' hanya karena ada penambahan jumlah -- kalau sudah
+        // 'menunggu' (perlu persetujuan pelanggan), tetap 'menunggu'.
+        $statusPersetujuan = $existing['status_persetujuan'];
+    } else {
+        $subtotal = $harga * $jumlah;
+        $stmt = $db->prepare("
+            INSERT INTO servis_sparepart
+              (servis_id, sparepart_id, jumlah, harga_jual, subtotal, sumber, status_persetujuan)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param('iiiidss', $servisId, $sparepartId, $jumlah, $harga, $subtotal, $sumber, $statusPersetujuan);
+        if (!$stmt->execute()) responseError('Gagal menambah sparepart', 500);
+        $newId = $stmt->insert_id;
+        $stmt->close();
+    }
 
-        if ($sDetail) {
-            $kendaraan = "{$sDetail['merk']} {$sDetail['model']} ({$sDetail['no_polisi']})";
-            kirimNotifikasi(
-                $db,
-                (int)$sDetail['pelanggan_id'],
-                'servis_sparepart',
-                'Konfirmasi Sparepart Diperlukan 🔧',
-                "Sparepart {$sp['nama']} diusulkan untuk kendaraan $kendaraan. Buka aplikasi untuk menyetujui atau menolak.",
-                (int)$sDetail['booking_id'],
-                $servisId
-            );
+    // Catatan: notifikasi FCM "Konfirmasi Sparepart Diperlukan" dikirim
+    // dari sini HANYA untuk kasus servis yang statusnya SUDAH menunggu_part
+    // (kasir menambah part lagi belakangan, sudah lewat momen transisi
+    // status). Untuk kasus normal (masih diagnosa), notifikasi baru
+    // dikirim nanti di action `selesai_diagnosa` saat status resmi
+    // dipindah ke 'menunggu_part' -- supaya pelanggan tidak dapat notif
+    // untuk sesuatu yang belum tentu jadi (mis. kasir masih nambah part
+    // lain, atau akhirnya pilih "langsung kerjakan" dan skip menunggu_part).
+    if ($statusPersetujuan === 'menunggu') {
+        $stmtS = $db->prepare("SELECT status FROM servis WHERE id=? LIMIT 1");
+        $stmtS->bind_param('i', $servisId);
+        $stmtS->execute();
+        $servisRow = $stmtS->get_result()->fetch_assoc();
+        $stmtS->close();
+
+        if ($servisRow && $servisRow['status'] === 'menunggu_part') {
+            $stmtD = $db->prepare("
+                SELECT b.pelanggan_id, b.id AS booking_id, k.merk, k.model, k.no_polisi
+                FROM   servis s
+                JOIN   booking b   ON b.id = s.booking_id
+                JOIN   kendaraan k ON k.id = b.kendaraan_id
+                WHERE  s.id = ?
+                LIMIT  1
+            ");
+            $stmtD->bind_param('i', $servisId);
+            $stmtD->execute();
+            $sDetail = $stmtD->get_result()->fetch_assoc();
+            $stmtD->close();
+
+            if ($sDetail) {
+                $kendaraan = "{$sDetail['merk']} {$sDetail['model']} ({$sDetail['no_polisi']})";
+                kirimNotifikasi(
+                    $db,
+                    (int)$sDetail['pelanggan_id'],
+                    'servis_sparepart',
+                    'Konfirmasi Sparepart Diperlukan 🔧',
+                    "Sparepart {$sp['nama']} diusulkan untuk kendaraan $kendaraan. Buka aplikasi untuk menyetujui atau menolak.",
+                    (int)$sDetail['booking_id'],
+                    $servisId
+                );
+            }
         }
     }
-    // ─────────────────────────────────────────────────────────────
 
     $db->close();
 

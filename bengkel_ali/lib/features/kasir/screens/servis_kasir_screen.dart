@@ -317,6 +317,10 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
   // Status update
   bool _updatingStatus = false;
 
+  // sparepart_id request pelanggan yang sedang di-toggle on/off (untuk
+  // nonaktifkan switch-nya sementara request ke server berjalan)
+  int? _togglingSparepartId;
+
   @override
   void initState() {
     super.initState();
@@ -408,85 +412,154 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
       );
       return;
     }
+    // Jenis servis dan mekanik wajib ditentukan kasir sebelum servis boleh
+    // dilanjutkan -- termasuk kasus pelanggan booking "belum tahu" jenis
+    // servisnya, ini yang mengharuskan kasir mengisinya saat diagnosa.
+    if (_selectedJenisServisId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pilih jenis servis terlebih dahulu'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (_selectedMekanikId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pilih mekanik terlebih dahulu'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     await _simpanInfo();
     if (!mounted) return;
 
-    await showDialog(
+    final data = _data;
+    if (data == null) return;
+
+    // Ringkasan sparepart yang SUDAH aktif di servis ini -- toggle on/off
+    // untuk request pelanggan sekarang dilakukan langsung di section
+    // "Sparepart Digunakan" pada layar detail, jadi popup ini cuma perlu
+    // menampilkan ringkasan dan menentukan langkah berikutnya.
+    final requestAktif = data.sparepart.where((s) => s.isRequest).toList();
+    final dariKasir = data.sparepart.where((s) => s.isDariKasir).toList();
+    // Kalau tidak ada satu pun sparepart dari kasir (manual/rekomendasi),
+    // tidak ada apa pun yang perlu di-approve ulang oleh pelanggan lewat
+    // aplikasi -- request pelanggan sendiri otomatis disetujui. "Tunggu
+    // Persetujuan Pelanggan" dikunci di kasus ini.
+    final adaDariKasir = dariKasir.isNotEmpty;
+    final adaMenungguDariKasir = dariKasir.any((s) => s.isMenunggu);
+
+    String lanjutKe = 'dikerjakan';
+
+    final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        // ← deklarasi di sini, dalam scope builder
-        bool importRequest = false;
-        String lanjutKe = 'dikerjakan';
-
         return StatefulBuilder(
           builder: (ctx, setDlg) => AlertDialog(
             title: const Text('Tentukan Sparepart'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: importRequest,
-                  onChanged: (v) => setDlg(() => importRequest = v),
-                  title: const Text('Pakai request sparepart pelanggan',
-                      style: TextStyle(fontSize: 14)),
-                  subtitle: const Text(
-                      'Sparepart yang dipilih pelanggan saat booking akan masuk ke servis',
-                      style: TextStyle(fontSize: 12)),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (requestAktif.isNotEmpty) ...[
+                      const Text('Request Sparepart Pelanggan (dipakai)',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      ...requestAktif.map((s) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text('• ${s.nama} (${s.jumlah} ${s.satuan})',
+                                style: const TextStyle(fontSize: 13)),
+                          )),
+                      const SizedBox(height: 8),
+                    ],
+                    if (dariKasir.isNotEmpty) ...[
+                      const Text('Sparepart Manual / Rekomendasi Kasir',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      ...dariKasir.map((s) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(s.nama,
+                                style: const TextStyle(fontSize: 13)),
+                            subtitle: Text('${s.jumlah} ${s.satuan}',
+                                style: const TextStyle(fontSize: 11)),
+                            trailing: Text(
+                              s.isMenunggu ? 'Menunggu' : 'Disetujui',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: s.isMenunggu
+                                    ? Colors.orange.shade700
+                                    : Colors.green.shade700,
+                              ),
+                            ),
+                          )),
+                      const SizedBox(height: 4),
+                    ],
+                    if (requestAktif.isEmpty && dariKasir.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text('Belum ada sparepart dipakai di servis ini',
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 12)),
+                      ),
+                    const Divider(),
+                    const Text('Lanjut ke:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: 'dikerjakan',
+                      groupValue: lanjutKe,
+                      onChanged: (v) => setDlg(() => lanjutKe = v!),
+                      title: const Text('Langsung Dikerjakan',
+                          style: TextStyle(fontSize: 14)),
+                      subtitle: const Text('Tidak perlu persetujuan pelanggan',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: 'menunggu_part',
+                      groupValue: lanjutKe,
+                      // Dikunci kalau tidak ada sparepart manual/rekomendasi
+                      // dari kasir -- request pelanggan sendiri otomatis
+                      // disetujui jadi tidak ada yang perlu ditunggu.
+                      onChanged: adaDariKasir
+                          ? (v) => setDlg(() => lanjutKe = v!)
+                          : null,
+                      title: Text('Tunggu Persetujuan Pelanggan',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: adaDariKasir ? null : Colors.grey)),
+                      subtitle: Text(
+                        adaDariKasir
+                            ? 'Pelanggan akan diminta menyetujui sparepart rekomendasi'
+                            : 'Tidak ada sparepart rekomendasi/manual dari kasir -- tidak ada yang perlu disetujui',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: adaDariKasir ? null : Colors.grey),
+                      ),
+                    ),
+                  ],
                 ),
-                const Divider(),
-                const Text('Lanjut ke:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                RadioListTile<String>(
-                  contentPadding: EdgeInsets.zero,
-                  value: 'dikerjakan',
-                  groupValue: lanjutKe,
-                  onChanged: (v) => setDlg(() => lanjutKe = v!),
-                  title: const Text('Langsung Dikerjakan',
-                      style: TextStyle(fontSize: 14)),
-                  subtitle: const Text('Tidak perlu persetujuan pelanggan',
-                      style: TextStyle(fontSize: 12)),
-                ),
-                RadioListTile<String>(
-                  contentPadding: EdgeInsets.zero,
-                  value: 'menunggu_part',
-                  groupValue: lanjutKe,
-                  onChanged: (v) => setDlg(() => lanjutKe = v!),
-                  title: const Text('Tunggu Persetujuan Pelanggan',
-                      style: TextStyle(fontSize: 14)),
-                  subtitle: const Text(
-                      'Pelanggan akan diminta menyetujui sparepart rekomendasi',
-                      style: TextStyle(fontSize: 12)),
-                ),
-              ],
+              ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Batal'),
               ),
               ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  setState(() => _updatingStatus = true);
-                  final res = await KasirService.instance.selesaiDiagnosa(
-                    servisId: widget.servisId,
-                    importRequest: importRequest,
-                    lanjutKe: lanjutKe,
-                  );
-                  if (!mounted) return;
-                  setState(() => _updatingStatus = false);
-                  final ok = res['success'] == true;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content:
-                        Text(res['message'] ?? (ok ? 'Berhasil' : 'Gagal')),
-                    backgroundColor: ok ? Colors.green : Colors.red,
-                  ));
-                  if (ok) _load();
-                },
+                onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.indigo.shade700,
                   foregroundColor: Colors.white,
@@ -498,6 +571,60 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
         );
       },
     );
+    if (confirmed != true) return;
+
+    // Kalau kasir pilih "Langsung Dikerjakan" tapi masih ada sparepart
+    // manual/rekomendasi yang belum disetujui pelanggan di aplikasi, tanya
+    // dulu apakah sudah dikonfirmasi ke pelanggan di luar aplikasi -- tidak
+    // benar-benar mengunci, karena mungkin saja pelanggan menunggu di
+    // bengkel / sudah dikonfirmasi lewat telepon.
+    bool konfirmasiLuarAplikasi = false;
+    if (lanjutKe == 'dikerjakan' && adaMenungguDariKasir) {
+      final jawaban = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Konfirmasi Sparepart Rekomendasi'),
+          content: const Text(
+              'Ada sparepart rekomendasi/manual yang belum disetujui pelanggan di aplikasi. '
+              'Sudah dikonfirmasi ke pelanggan di luar aplikasi (telepon/langsung)?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'batal'),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'belum'),
+              child: const Text('Belum, Tetap Menunggu'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'ya'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo.shade700,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Ya, Sudah'),
+            ),
+          ],
+        ),
+      );
+      if (jawaban == null || jawaban == 'batal') return;
+      konfirmasiLuarAplikasi = jawaban == 'ya';
+    }
+
+    setState(() => _updatingStatus = true);
+    final res = await KasirService.instance.selesaiDiagnosa(
+      servisId: widget.servisId,
+      lanjutKe: lanjutKe,
+      konfirmasiLuarAplikasi: konfirmasiLuarAplikasi,
+    );
+    if (!mounted) return;
+    setState(() => _updatingStatus = false);
+    final ok = res['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['message'] ?? (ok ? 'Berhasil' : 'Gagal')),
+      backgroundColor: ok ? Colors.green : Colors.red,
+    ));
+    if (ok) _load();
   }
 
   Future<void> _lihatNota() async {
@@ -506,14 +633,13 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
         await KasirService.instance.getTransaksiByServis(widget.servisId);
     if (!mounted) return;
     if (res['success'] == true && res['data'] != null) {
-      final trxId = (res['data']['id'] as num?)?.toInt();
+      final trxId = _intVal(res['data']['id']);
       final noNota = res['data']['no_nota'] as String? ?? '';
       final metodeBayar = res['data']['metode_bayar'] as String? ?? 'cash';
-      final grandTotal = (res['data']['grand_total'] as num?)?.toDouble() ?? 0;
-      final jumlahBayar =
-          (res['data']['jumlah_bayar'] as num?)?.toDouble() ?? grandTotal;
-      final kembalian = (res['data']['kembalian'] as num?)?.toDouble() ?? 0;
-      if (trxId != null && mounted) {
+      final grandTotal = _numVal(res['data']['grand_total']);
+      final jumlahBayar = _numVal(res['data']['jumlah_bayar'], grandTotal);
+      final kembalian = _numVal(res['data']['kembalian']);
+      if (trxId > 0 && mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -524,6 +650,10 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
               grandTotal: grandTotal,
               jumlahBayar: jumlahBayar,
               kembalian: kembalian,
+              // Dibuka dari halaman detail servis (bukan dari alur bayar
+              // yang baru selesai), jadi harus pakai tombol kembali biasa,
+              // bukan "Selesai" yang melempar balik ke root/dashboard.
+              fromRiwayat: true,
             ),
           ),
         );
@@ -538,6 +668,85 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
     }
   }
 
+  // Section "Sparepart Digunakan": request pelanggan ditampilkan dengan
+  // switch on/off (termasuk yang off/belum dipakai, supaya gampang
+  // dinyalakan lagi), lalu di bawahnya sparepart manual/rekomendasi kasir.
+  Widget _buildSparepartSectionBody(DetailServisModel d, bool sudahSelesai) {
+    final requestAktif = d.sparepart.where((s) => s.isRequest).toList();
+    final requestBelumDipakai = d.sparepartRequestPending;
+    final dariKasir = d.sparepart.where((s) => s.isDariKasir).toList();
+
+    final adaRequest =
+        requestAktif.isNotEmpty || requestBelumDipakai.isNotEmpty;
+
+    if (!adaRequest && dariKasir.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: Text('Belum ada sparepart ditambahkan',
+              style: TextStyle(color: Colors.grey.shade500)),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (adaRequest) ...[
+          const Text('Request Sparepart Pelanggan',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const Text(
+              'Dipilih pelanggan saat booking -- nyalakan untuk dipakai di servis ini',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(height: 4),
+          ...requestAktif.map((sp) => SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                value: true,
+                onChanged:
+                    (sudahSelesai || _togglingSparepartId == sp.sparepartId)
+                        ? null
+                        : (_) => _toggleRequestOff(sp),
+                title: Text(sp.nama, style: const TextStyle(fontSize: 13)),
+                subtitle: Text(
+                    '${sp.jumlah} ${sp.satuan} · ${FormatHelper.currency(sp.subtotal)}',
+                    style: const TextStyle(fontSize: 11)),
+                activeThumbColor: Colors.indigo.shade700,
+              )),
+          ...requestBelumDipakai.map((r) => SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                value: false,
+                onChanged:
+                    (sudahSelesai || _togglingSparepartId == r.sparepartId)
+                        ? null
+                        : (_) => _toggleRequestOn(r),
+                title: Text(r.nama,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                subtitle: Text('${r.jumlah} ${r.satuan} · tidak dipakai',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              )),
+          const Divider(),
+        ],
+        const Text('Sparepart Manual / Rekomendasi Kasir',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        const SizedBox(height: 4),
+        if (dariKasir.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('Belum ada sparepart manual/rekomendasi',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          )
+        else
+          ...dariKasir.map((sp) => _SparepartTile(
+                sp: sp,
+                onHapus: sudahSelesai ? null : () => _hapusSparepart(sp.id),
+              )),
+      ],
+    );
+  }
+
   Future<void> _hapusSparepart(int partId) async {
     final res = await KasirService.instance.hapusSparepart(partId);
     if (!mounted) return;
@@ -546,6 +755,47 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
       content: Text(res['message'] ?? (ok ? 'Sparepart dihapus' : 'Gagal')),
       backgroundColor: ok ? Colors.orange : Colors.red,
     ));
+    if (ok) _load();
+  }
+
+  // Nyalakan sparepart request pelanggan yang belum dipakai -- masuk ke
+  // servis dengan sumber 'request' (otomatis disetujui, karena pelanggan
+  // sudah memilihnya sendiri saat booking).
+  Future<void> _toggleRequestOn(SparepartRequestPending r) async {
+    setState(() => _togglingSparepartId = r.sparepartId);
+    final res = await KasirService.instance.tambahSparepart(
+      servisId: widget.servisId,
+      sparepartId: r.sparepartId,
+      jumlah: r.jumlah,
+      sumber: 'request',
+    );
+    if (!mounted) return;
+    setState(() => _togglingSparepartId = null);
+    final ok = res['success'] == true;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(res['message'] ?? 'Gagal menambah sparepart'),
+        backgroundColor: Colors.red,
+      ));
+    }
+    if (ok) _load();
+  }
+
+  // Matikan sparepart request pelanggan yang sudah dipakai -- dikeluarkan
+  // lagi dari servis, tapi tetap tampil di daftar (dengan status off) biar
+  // gampang dinyalakan lagi kalau berubah pikiran.
+  Future<void> _toggleRequestOff(ServisSparepart sp) async {
+    setState(() => _togglingSparepartId = sp.sparepartId);
+    final res = await KasirService.instance.hapusSparepart(sp.id);
+    if (!mounted) return;
+    setState(() => _togglingSparepartId = null);
+    final ok = res['success'] == true;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(res['message'] ?? 'Gagal mengeluarkan sparepart'),
+        backgroundColor: Colors.red,
+      ));
+    }
     if (ok) _load();
   }
 
@@ -792,24 +1042,7 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
                     icon: const Icon(Icons.add_circle, color: Colors.indigo),
                     onPressed: () => _showTambahSparepart(),
                   ),
-            child: d.sparepart.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Center(
-                      child: Text('Belum ada sparepart ditambahkan',
-                          style: TextStyle(color: Colors.grey.shade500)),
-                    ),
-                  )
-                : Column(
-                    children: d.sparepart
-                        .map((sp) => _SparepartTile(
-                              sp: sp,
-                              onHapus: sudahSelesai
-                                  ? null
-                                  : () => _hapusSparepart(sp.id),
-                            ))
-                        .toList(),
-                  ),
+            child: _buildSparepartSectionBody(d, sudahSelesai),
           ),
           const SizedBox(height: 12),
 
@@ -945,7 +1178,16 @@ class _DetailServisScreenState extends State<DetailServisScreen> {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(label, style: const TextStyle(fontSize: 16)),
+                // Expanded supaya label panjang (mis. "Selesai Diagnosa &
+                // Tentukan Sparepart") tidak overflow di layar sempit --
+                // sebelumnya Text di sini tidak dibungkus apa pun jadi
+                // dipaksa satu baris penuh walau tidak muat.
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2),
+                ),
               ],
             ),
             content: Text(pesanKonfirmasi),
@@ -1270,7 +1512,7 @@ class _TambahSparepartSheetState extends State<_TambahSparepartSheet> {
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
               subtitle: Text(
                 _perluPersetujuan
-                    ? 'Pelanggan akan menerima notifikasi untuk menyetujui sparepart ini'
+                    ? 'Pelanggan diminta menyetujui -- notifikasi terkirim saat status diubah ke "Menunggu Part"'
                     : 'Sparepart langsung disetujui tanpa konfirmasi pelanggan',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
@@ -1428,18 +1670,40 @@ class _ProsesBayarScreenState extends State<ProsesBayarScreen> {
     if (!mounted) return;
 
     final berhasil = res['success'] == true;
+    String? uploadError;
 
     // Upload foto bukti jika transfer & pembayaran berhasil
     if (berhasil && _metodeBayar == 'transfer' && _fotoBukti != null) {
       setState(() => _uploadingFoto = true);
-      final transaksiId = res['data']?['transaksi_id'] as int?;
+      // Pakai tryParse(...toString()) -- lebih aman daripada `as int?`
+      // langsung, konsisten dengan pola aman yang sudah dipakai di tempat
+      // lain (id memang harusnya INT asli, tapi ini jaga-jaga).
+      final transaksiId =
+          int.tryParse(res['data']?['transaksi_id']?.toString() ?? '');
       if (transaksiId != null) {
-        await KasirService.instance.uploadBuktiBayar(
+        final uploadRes = await KasirService.instance.uploadBuktiBayar(
           transaksiId: transaksiId,
           foto: _fotoBukti!,
         );
+        // Sebelumnya hasil upload ini tidak pernah dicek -- kalau gagal
+        // (mis. folder di server tidak writable), gagalnya diam-diam dan
+        // foto tidak pernah tersimpan tanpa ada tanda apa pun ke kasir.
+        if (uploadRes['success'] != true) {
+          uploadError = uploadRes['message'] as String? ?? 'Upload bukti gagal';
+        }
+      } else {
+        uploadError = 'transaksi_id tidak ditemukan, foto tidak diunggah';
       }
       if (mounted) setState(() => _uploadingFoto = false);
+    }
+
+    if (uploadError != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Pembayaran berhasil, tapi upload foto bukti gagal: '
+            '$uploadError'),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
+      ));
     }
 
     if (!mounted) return;
@@ -1765,6 +2029,28 @@ class _MetodeBtn extends StatelessWidget {
 }
 
 // ── Nota Screen ───────────────────────────────────────────
+// Helper: parse angka dari data API dengan aman.
+// PHP/mysqli mengembalikan kolom INT sebagai number di JSON, tapi kolom
+// DECIMAL/NUMERIC (grand_total, total_jasa, diskon, harga_jual, subtotal, dll)
+// selalu dikembalikan sebagai STRING (mis. "150000.00"). Cast langsung
+// `as num?` akan crash dengan "type 'String' is not a subtype of type 'num?'"
+// begitu API mengembalikan kolom decimal. Fungsi ini menerima num ATAU String.
+double _numVal(dynamic v, [double fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v) ?? fallback;
+  return fallback;
+}
+
+int _intVal(dynamic v, [int fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is num) return v.toInt();
+  if (v is String) {
+    return int.tryParse(v) ?? double.tryParse(v)?.toInt() ?? fallback;
+  }
+  return fallback;
+}
+
 class NotaScreen extends StatefulWidget {
   final int transaksiId;
   final String noNota;
@@ -1772,6 +2058,9 @@ class NotaScreen extends StatefulWidget {
   final double grandTotal;
   final double jumlahBayar;
   final double kembalian;
+  // true kalau dibuka dari Riwayat Transaksi (lihat ulang),
+  // false kalau baru saja selesai bayar (dari alur pembayaran).
+  final bool fromRiwayat;
 
   const NotaScreen({
     super.key,
@@ -1781,6 +2070,7 @@ class NotaScreen extends StatefulWidget {
     required this.grandTotal,
     required this.jumlahBayar,
     required this.kembalian,
+    this.fromRiwayat = false,
   });
 
   @override
@@ -1822,17 +2112,20 @@ class _NotaScreenState extends State<NotaScreen> {
         title: const Text('Nota Pembayaran'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
-        actions: [
-          TextButton.icon(
-            onPressed: () {
-              // Kembali ke servis list (pop sampai servis screen)
-              Navigator.popUntil(context, (route) => route.isFirst);
-            },
-            icon: const Icon(Icons.home, color: Colors.white),
-            label: const Text('Selesai', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+        automaticallyImplyLeading: widget.fromRiwayat,
+        actions: widget.fromRiwayat
+            ? null
+            : [
+                TextButton.icon(
+                  onPressed: () {
+                    // Kembali ke servis list (pop sampai servis screen)
+                    Navigator.popUntil(context, (route) => route.isFirst);
+                  },
+                  icon: const Icon(Icons.home, color: Colors.white),
+                  label: const Text('Selesai',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -1884,26 +2177,57 @@ class _NotaScreenState extends State<NotaScreen> {
     // Tampilkan nota minimal dari data yang sudah ada jika fetch gagal
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: _NotaCard(
-        trx: {
-          'no_nota': widget.noNota,
-          'grand_total': widget.grandTotal,
-          'metode_bayar': widget.metodeBayar,
-          'jumlah_bayar': widget.jumlahBayar,
-          'kembalian': widget.kembalian,
-          'tanggal': DateTime.now().toIso8601String(),
-        },
-        items: const [],
-        bengkel: const {},
-        metodeBayar: widget.metodeBayar,
-        jumlahBayar: widget.jumlahBayar,
-        kembalian: widget.kembalian,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Supaya kegagalan ambil detail lengkap tidak "diam-diam" lagi —
+          // pesan error asli ditampilkan di sini agar mudah dilaporkan/di-debug.
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Colors.orange.shade800, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Detail lengkap nota gagal dimuat, menampilkan versi minimal.'
+                    '${_error != null ? '\n$_error' : ''}',
+                    style:
+                        TextStyle(color: Colors.orange.shade900, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _NotaCard(
+            trx: {
+              'no_nota': widget.noNota,
+              'grand_total': widget.grandTotal,
+              'metode_bayar': widget.metodeBayar,
+              'jumlah_bayar': widget.jumlahBayar,
+              'kembalian': widget.kembalian,
+              'tanggal': DateTime.now().toIso8601String(),
+            },
+            items: const [],
+            bengkel: const {},
+            metodeBayar: widget.metodeBayar,
+            jumlahBayar: widget.jumlahBayar,
+            kembalian: widget.kembalian,
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _cetakNota() async {
-    if (_nota == null && _error != null) return;
     setState(() => _loading = true);
 
     try {
@@ -2006,16 +2330,29 @@ class _NotaScreenState extends State<NotaScreen> {
     final noHpBengkel = bengkel['no_hp'] as String? ?? '';
     final noNota = trx['no_nota'] as String? ?? '-';
     final tanggal = fmtTanggal(trx['tanggal'] as String? ?? '');
-    final namaPelanggan = trx['nama_pelanggan'] as String? ?? '';
+    final tipe = trx['tipe'] as String? ?? 'servis';
+    final isSparepart = tipe == 'penjualan_sparepart';
+    final namaPelangganRaw = (trx['nama_pelanggan'] as String?)?.trim();
+    final namaPelanggan = isSparepart
+        ? (namaPelangganRaw?.isNotEmpty == true
+            ? namaPelangganRaw!
+            : 'Umum (Walk-in)')
+        : (namaPelangganRaw ?? '');
     final noHpP = trx['no_hp'] as String? ?? '';
     final merk = trx['merk'] as String? ?? '';
     final model = trx['model'] as String? ?? '';
     final noPolisi = trx['no_polisi'] as String? ?? '';
+    final noBooking = trx['no_booking'] as String? ?? '';
     final jenisServis = trx['jenis_servis'] as String? ?? '';
-    final totalJasa = (trx['total_jasa'] as num?)?.toDouble() ?? 0;
-    final totalPart = (trx['total_sparepart'] as num?)?.toDouble() ?? 0;
-    final diskon = (trx['diskon'] as num?)?.toDouble() ?? 0;
-    final grandTotal = (trx['grand_total'] as num?)?.toDouble() ?? jumlahBayar;
+    final namaMekanik = trx['nama_mekanik'] as String? ?? '';
+    final diagnosaRaw = trx['diagnosa'] as String? ?? '';
+    final diagnosa = diagnosaRaw.length > 90
+        ? '${diagnosaRaw.substring(0, 90).trim()}…'
+        : diagnosaRaw;
+    final totalJasa = _numVal(trx['total_jasa']);
+    final totalPart = _numVal(trx['total_sparepart']);
+    final diskon = _numVal(trx['diskon']);
+    final grandTotal = _numVal(trx['grand_total'], jumlahBayar);
 
     final divider = pw.Divider(thickness: 0.5, color: PdfColors.grey400);
     const thin = pw.TextStyle(fontSize: 9, color: PdfColors.grey700);
@@ -2051,6 +2388,17 @@ class _NotaScreenState extends State<NotaScreen> {
             pw.Text('Telp: $noHpBengkel',
                 style: thin, textAlign: pw.TextAlign.center),
           pw.SizedBox(height: 4),
+          pw.Text(
+              isSparepart
+                  ? 'NOTA PENJUALAN SPAREPART'
+                  : 'NOTA SERVIS KENDARAAN',
+              style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: pw.FontWeight.bold,
+                  color:
+                      isSparepart ? PdfColors.orange800 : PdfColors.indigo800),
+              textAlign: pw.TextAlign.center),
+          pw.SizedBox(height: 4),
           divider,
 
           // No nota & tanggal
@@ -2061,13 +2409,30 @@ class _NotaScreenState extends State<NotaScreen> {
           divider,
 
           // Pelanggan & kendaraan
-          if (namaPelanggan.isNotEmpty) ...[
-            row2('Pelanggan', namaPelanggan),
-            if (noHpP.isNotEmpty) row2('No. HP', noHpP),
+          if (isSparepart) ...[
+            row2('Pembeli', namaPelanggan),
+          ] else ...[
+            if (namaPelanggan.isNotEmpty) ...[
+              row2('Pelanggan', namaPelanggan),
+              if (noHpP.isNotEmpty) row2('No. HP', noHpP),
+            ],
+            if (noBooking.isNotEmpty) row2('No. Booking', noBooking),
+            if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
+              row2('Kendaraan', '$merk $model • $noPolisi'),
+            if (jenisServis.isNotEmpty) row2('Jenis Servis', jenisServis),
+            if (namaMekanik.isNotEmpty) row2('Mekanik', namaMekanik),
+            if (diagnosa.isNotEmpty) ...[
+              pw.SizedBox(height: 2),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text('Diagnosa:', style: bold),
+              ),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(diagnosa, style: thin),
+              ),
+            ],
           ],
-          if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
-            row2('Kendaraan', '$merk $model • $noPolisi'),
-          if (jenisServis.isNotEmpty) row2('Jenis Servis', jenisServis),
           pw.SizedBox(height: 2),
           divider,
 
@@ -2080,10 +2445,10 @@ class _NotaScreenState extends State<NotaScreen> {
             pw.SizedBox(height: 3),
             ...items.map((item) {
               final nama = item['nama'] as String? ?? '';
-              final jumlah = (item['jumlah'] as num?)?.toInt() ?? 0;
+              final jumlah = _intVal(item['jumlah']);
               final satuan = item['satuan'] as String? ?? '';
-              final harga = (item['harga_jual'] as num?)?.toDouble() ?? 0;
-              final subtotal = (item['subtotal'] as num?)?.toDouble() ?? 0;
+              final harga = _numVal(item['harga_jual']);
+              final subtotal = _numVal(item['subtotal']);
               return pw.Padding(
                 padding: const pw.EdgeInsets.only(bottom: 3),
                 child: pw.Column(
@@ -2168,16 +2533,21 @@ class _NotaCard extends StatelessWidget {
     final noNota = trx['no_nota'] as String? ?? '-';
     final tanggalRaw = trx['tanggal'] as String? ?? '';
     final tanggalFmt = _formatTanggal(tanggalRaw);
-    final namaPelanggan = trx['nama_pelanggan'] as String? ?? '-';
+    final tipe = trx['tipe'] as String? ?? 'servis';
+    final isSparepart = tipe == 'penjualan_sparepart';
+    final namaPelanggan = (trx['nama_pelanggan'] as String?)?.trim();
     final noHpPelanggan = trx['no_hp'] as String? ?? '-';
     final merk = trx['merk'] as String? ?? '';
     final model = trx['model'] as String? ?? '';
     final noPolisi = trx['no_polisi'] as String? ?? '';
+    final noBooking = trx['no_booking'] as String? ?? '';
     final jenisServis = trx['jenis_servis'] as String? ?? '';
-    final totalJasa = (trx['total_jasa'] as num?)?.toDouble() ?? 0;
-    final totalSparepart = (trx['total_sparepart'] as num?)?.toDouble() ?? 0;
-    final diskon = (trx['diskon'] as num?)?.toDouble() ?? 0;
-    final grandTotal = (trx['grand_total'] as num?)?.toDouble() ?? jumlahBayar;
+    final namaMekanik = trx['nama_mekanik'] as String? ?? '';
+    final diagnosa = trx['diagnosa'] as String? ?? '';
+    final totalJasa = _numVal(trx['total_jasa']);
+    final totalSparepart = _numVal(trx['total_sparepart']);
+    final diskon = _numVal(trx['diskon']);
+    final grandTotal = _numVal(trx['grand_total'], jumlahBayar);
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -2206,6 +2576,29 @@ class _NotaCard extends StatelessWidget {
                     Text('Telp: $noHp',
                         style: TextStyle(
                             fontSize: 12, color: Colors.grey.shade600)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSparepart
+                          ? Colors.orange.shade50
+                          : Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isSparepart
+                          ? 'NOTA PENJUALAN SPAREPART'
+                          : 'NOTA SERVIS KENDARAAN',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                          color: isSparepart
+                              ? Colors.orange.shade700
+                              : Colors.indigo.shade700),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2238,16 +2631,26 @@ class _NotaCard extends StatelessWidget {
             const Divider(),
 
             // Info pelanggan & kendaraan
-            if (namaPelanggan != '-') ...[
-              _row(Icons.person, 'Pelanggan', namaPelanggan),
-              if (noHpPelanggan != '-')
-                _row(Icons.phone, 'No. HP', noHpPelanggan),
+            if (isSparepart) ...[
+              _row(Icons.person, 'Pembeli', namaPelanggan ?? 'Umum (Walk-in)'),
+            ] else ...[
+              if (namaPelanggan != null && namaPelanggan.isNotEmpty) ...[
+                _row(Icons.person, 'Pelanggan', namaPelanggan),
+                if (noHpPelanggan != '-')
+                  _row(Icons.phone, 'No. HP', noHpPelanggan),
+              ],
+              if (noBooking.isNotEmpty)
+                _row(Icons.confirmation_number, 'No. Booking', noBooking),
+              if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
+                _row(Icons.two_wheeler, 'Kendaraan',
+                    '$merk $model • $noPolisi'.trim()),
+              if (jenisServis.isNotEmpty)
+                _row(Icons.build, 'Jenis Servis', jenisServis),
+              if (namaMekanik.isNotEmpty)
+                _row(Icons.engineering, 'Mekanik', namaMekanik),
+              if (diagnosa.isNotEmpty)
+                _row(Icons.fact_check, 'Diagnosa', _ringkas(diagnosa)),
             ],
-            if (merk.isNotEmpty || model.isNotEmpty || noPolisi.isNotEmpty)
-              _row(Icons.two_wheeler, 'Kendaraan',
-                  '$merk $model • $noPolisi'.trim()),
-            if (jenisServis.isNotEmpty)
-              _row(Icons.build, 'Jenis Servis', jenisServis),
             const SizedBox(height: 8),
             const Divider(),
 
@@ -2258,10 +2661,10 @@ class _NotaCard extends StatelessWidget {
               const SizedBox(height: 8),
               ...items.map((item) {
                 final nama = item['nama'] as String? ?? '';
-                final jumlah = (item['jumlah'] as num?)?.toInt() ?? 0;
+                final jumlah = _intVal(item['jumlah']);
                 final satuan = item['satuan'] as String? ?? '';
-                final harga = (item['harga_jual'] as num?)?.toDouble() ?? 0;
-                final subtotal = (item['subtotal'] as num?)?.toDouble() ?? 0;
+                final harga = _numVal(item['harga_jual']);
+                final subtotal = _numVal(item['subtotal']);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(
@@ -2339,6 +2742,13 @@ class _NotaCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // Ringkas teks panjang (mis. diagnosa) supaya nota tidak terlalu panjang
+  String _ringkas(String text, {int maxLen = 90}) {
+    final t = text.trim();
+    if (t.length <= maxLen) return t;
+    return '${t.substring(0, maxLen).trim()}…';
   }
 
   Widget _row(IconData icon, String label, String value) => Padding(

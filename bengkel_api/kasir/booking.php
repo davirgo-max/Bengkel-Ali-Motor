@@ -351,6 +351,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$pelangganId && (!$namaBaru || !$hpBaru))
         responseError('Pilih pelanggan atau isi nama + no HP pelanggan baru');
 
+    // ── Kuota servis harian ────────────────────────────────
+    // Walk-in TIDAK diblokir keras — pelanggan sudah berada di bengkel.
+    // Kasir cukup diberi peringatan dan harus mengonfirmasi (override_kuota)
+    // sebelum walk-in tetap dibuat melewati kuota.
+    $overrideKuota = !empty($body['override_kuota']);
+    if (!$overrideKuota) {
+        $stmtKuota = $db->prepare("SELECT kuota_booking_harian FROM pengaturan_bengkel WHERE id=1 LIMIT 1");
+        $stmtKuota->execute();
+        $pengaturanRow = $stmtKuota->get_result()->fetch_assoc();
+        $stmtKuota->close();
+        $kuotaHarian = (int)($pengaturanRow['kuota_booking_harian'] ?? 0);
+
+        if ($kuotaHarian > 0) {
+            $stmtTerisi = $db->prepare("
+                SELECT COUNT(*) AS total FROM booking
+                WHERE tanggal_servis = CURDATE() AND status NOT IN ('dibatalkan','no_show')
+            ");
+            $stmtTerisi->execute();
+            $terisi = (int)$stmtTerisi->get_result()->fetch_assoc()['total'];
+            $stmtTerisi->close();
+
+            if ($terisi >= $kuotaHarian) {
+                response(false,
+                    "Kapasitas servis hari ini sudah penuh ($terisi/$kuotaHarian). Tetap lanjutkan walk-in ini?",
+                    ['kuota_penuh' => true, 'terisi' => $terisi, 'kuota' => $kuotaHarian],
+                    409
+                );
+            }
+        }
+    }
+
     // Buat pelanggan baru jika belum ada
     if (!$pelangganId) {
         $stmt = $db->prepare("SELECT id FROM pelanggan WHERE no_hp=? LIMIT 1");

@@ -6,8 +6,8 @@ class AppConstants {
   // ── Base URL ──────────────────────────────────────────────
   // Ganti IP ini dengan IP laptop kamu yang muncul di ipconfig
   // Emulator Android TIDAK bisa pakai 'localhost' untuk akses XAMPP
-  static const String baseUrl = 'http://192.168.1.160/bengkel_api';
-  static const String uploadUrl = 'http://192.168.1.160/bengkel_api/uploads';
+  static const String baseUrl = 'http://192.168.43.94/bengkel_api';
+  static const String uploadUrl = 'http://192.168.43.94/bengkel_api/uploads';
 
   // ── Auth ──────────────────────────────────────────────────
   static const String loginUrl = '$baseUrl/auth/login.php';
@@ -35,7 +35,6 @@ class AppConstants {
   static const String kasirBookingUrl = '$baseUrl/kasir/booking.php';
   static const String kasirServisUrl = '$baseUrl/kasir/servis.php';
   static const String kasirTransaksiUrl = '$baseUrl/kasir/transaksi.php';
-  static const String kasirKasHarianUrl = '$baseUrl/kasir/kas_harian.php';
   static const String kasirPelangganUrl = '$baseUrl/kasir/pelanggan.php';
   static const String kasirSparepartUrl = '$baseUrl/kasir/sparepart_cari.php';
   static const String kasirPembelianStokUrl =

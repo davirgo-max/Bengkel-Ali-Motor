@@ -49,77 +49,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     // Detail 1 transaksi berdasarkan servis_id (untuk tombol "Lihat Nota" dari detail servis)
     if (isset($_GET['servis_id'])) {
-        $servisId = (int)$_GET['servis_id'];
-        $stmt = $db->prepare("SELECT id, no_nota, metode_bayar, grand_total, jumlah_bayar, kembalian FROM transaksi WHERE servis_id = ? LIMIT 1");
-        $stmt->bind_param('i', $servisId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$row) responseError('Transaksi tidak ditemukan untuk servis ini', 404);
-        responseOk('OK', $row);
+        try {
+            $servisId = (int)$_GET['servis_id'];
+            $stmt = $db->prepare("SELECT id, no_nota, metode_bayar, grand_total, jumlah_bayar, kembalian FROM transaksi WHERE servis_id = ? LIMIT 1");
+            $stmt->bind_param('i', $servisId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$row) responseError('Transaksi tidak ditemukan untuk servis ini', 404);
+            responseOk('OK', $row);
+        } catch (Throwable $e) {
+            responseError('Gagal memuat transaksi: ' . $e->getMessage(), 500);
+        }
     }
 
     // Detail 1 transaksi (untuk cetak nota)
     if (isset($_GET['id'])) {
-        $id   = (int)$_GET['id'];
-        $stmt = $db->prepare("
-            SELECT t.*,
-                   u.nama AS nama_kasir,
-                   p.nama AS nama_pelanggan, p.no_hp,
-                   s.id   AS servis_id,
-                   b.no_booking, b.tanggal_servis,
-                   k.merk, k.model, k.no_polisi,
-                   js.nama AS jenis_servis
-            FROM transaksi t
-            JOIN users u          ON u.id = t.kasir_id
-            LEFT JOIN pelanggan p ON p.id = t.pelanggan_id
-            LEFT JOIN servis s    ON s.id = t.servis_id
-            LEFT JOIN booking b   ON b.id = s.booking_id
-            LEFT JOIN kendaraan k ON k.id = b.kendaraan_id
-            LEFT JOIN jenis_servis js ON js.id = b.jenis_servis_id
-            WHERE t.id = ? LIMIT 1
-        ");
-        $stmt->bind_param('i', $id);
-        $stmt->execute();
-        $trx = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$trx) responseError('Transaksi tidak ditemukan', 404);
-
-        // Ambil detail item sparepart jika ada
-        $items = [];
-        if ($trx['servis_id']) {
+        // Dibungkus try/catch: kalau ada error SQL apa pun di sini, PHP 8.1+
+        // akan melempar mysqli_sql_exception yang -- kalau tidak ditangkap --
+        // menghasilkan fatal error tercampur ke output JSON (persis pola bug
+        // "FormatException" yang pernah terjadi di booking.php / Masalah 1).
+        // Dengan try/catch, response tetap JSON valid dan pesan error asli
+        // ikut terkirim supaya gampang didiagnosis dari Flutter.
+        try {
+            $id   = (int)$_GET['id'];
             $stmt = $db->prepare("
-                SELECT ss.jumlah, ss.harga_jual, ss.subtotal, sp.nama, sp.satuan
-                FROM servis_sparepart ss
-                JOIN sparepart sp ON sp.id = ss.sparepart_id
-                WHERE ss.servis_id = ?
-            ");
-            $stmt->bind_param('i', $trx['servis_id']);
-            $stmt->execute();
-            while ($r = $stmt->get_result()->fetch_assoc()) $items[] = $r;
-            $stmt->close();
-        } else {
-            $stmt = $db->prepare("
-                SELECT tsl.jumlah, tsl.harga_jual, tsl.subtotal, sp.nama, sp.satuan
-                FROM transaksi_sparepart_langsung tsl
-                JOIN sparepart sp ON sp.id = tsl.sparepart_id
-                WHERE tsl.transaksi_id = ?
+                SELECT t.*,
+                       u.nama AS nama_kasir,
+                       p.nama AS nama_pelanggan, p.no_hp,
+                       s.id   AS servis_id, s.diagnosa, s.waktu_mulai, s.waktu_selesai,
+                       b.no_booking, b.tanggal_servis,
+                       k.merk, k.model, k.no_polisi,
+                       js.nama AS jenis_servis,
+                       m.nama AS nama_mekanik
+                FROM transaksi t
+                LEFT JOIN users u     ON u.id = t.kasir_id
+                LEFT JOIN pelanggan p ON p.id = t.pelanggan_id
+                LEFT JOIN servis s    ON s.id = t.servis_id
+                LEFT JOIN booking b   ON b.id = s.booking_id
+                LEFT JOIN kendaraan k ON k.id = b.kendaraan_id
+                LEFT JOIN jenis_servis js ON js.id = b.jenis_servis_id
+                LEFT JOIN mekanik m   ON m.id = s.mekanik_id
+                WHERE t.id = ? LIMIT 1
             ");
             $stmt->bind_param('i', $id);
             $stmt->execute();
-            while ($r = $stmt->get_result()->fetch_assoc()) $items[] = $r;
+            $trx = $stmt->get_result()->fetch_assoc();
             $stmt->close();
+            if (!$trx) responseError('Transaksi tidak ditemukan', 404);
+
+            // Ambil detail item sparepart jika ada
+            $items = [];
+            if ($trx['servis_id']) {
+                $stmt = $db->prepare("
+                    SELECT ss.jumlah, ss.harga_jual, ss.subtotal, sp.nama, sp.satuan
+                    FROM servis_sparepart ss
+                    JOIN sparepart sp ON sp.id = ss.sparepart_id
+                    WHERE ss.servis_id = ?
+                ");
+                $stmt->bind_param('i', $trx['servis_id']);
+                $stmt->execute();
+                // PENTING: get_result() hanya boleh dipanggil SEKALI setelah execute().
+                // Memanggilnya lagi di setiap iterasi while (seperti sebelumnya) membuat
+                // driver mysqli kehilangan sinkronisasi dengan hasil query sebelumnya,
+                // sehingga query berikutnya gagal dengan error
+                // "Commands out of sync; you can't run this command now".
+                $result = $stmt->get_result();
+                while ($r = $result->fetch_assoc()) $items[] = $r;
+                $stmt->close();
+            } else {
+                $stmt = $db->prepare("
+                    SELECT tsl.jumlah, tsl.harga_jual, tsl.subtotal, sp.nama, sp.satuan
+                    FROM transaksi_sparepart_langsung tsl
+                    JOIN sparepart sp ON sp.id = tsl.sparepart_id
+                    WHERE tsl.transaksi_id = ?
+                ");
+                $stmt->bind_param('i', $id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                while ($r = $result->fetch_assoc()) $items[] = $r;
+                $stmt->close();
+            }
+
+            // Ambil info bengkel untuk nota (guard: jangan panggil fetch_assoc()
+            // di atas hasil query yang gagal / false, itu memicu fatal error)
+            $bengkelResult = $db->query("SELECT * FROM pengaturan_bengkel WHERE id=1 LIMIT 1");
+            $bengkel = $bengkelResult ? ($bengkelResult->fetch_assoc() ?: []) : [];
+
+            responseOk('OK', [
+                'transaksi' => $trx,
+                'items'     => $items,
+                'bengkel'   => $bengkel,
+            ]);
+        } catch (Throwable $e) {
+            responseError('Gagal memuat detail nota: ' . $e->getMessage(), 500);
         }
-
-        // Ambil info bengkel untuk nota
-        $bengkel = $db->query("SELECT * FROM pengaturan_bengkel WHERE id=1 LIMIT 1")
-                      ->fetch_assoc();
-
-        responseOk('OK', [
-            'transaksi' => $trx,
-            'items'     => $items,
-            'bengkel'   => $bengkel,
-        ]);
     }
 
     // Riwayat transaksi per tanggal

@@ -6,9 +6,9 @@ import '../../auth/services/auth_service.dart';
 import '../../../core/utils/format_helper.dart';
 import '../../../core/constants/app_constants.dart';
 import '../services/kasir_service.dart';
-import 'booking_kasir_screen.dart';
 import 'form_walkin_screen.dart';
-import 'jual_sparepart_screen.dart';
+import 'kelola_pelanggan_screen.dart';
+import 'info_sparepart_screen.dart';
 
 class DashboardKasirScreen extends StatefulWidget {
   final UserModel user;
@@ -255,24 +255,14 @@ class _DashboardKasirScreenState extends State<DashboardKasirScreen> {
                           ),
                           const SizedBox(width: 12),
                           _QuickAction(
-                            icon: Icons.storefront_outlined,
-                            label: 'Jual\nSparepart',
-                            color: Colors.orange,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const JualSparepartScreen()),
-                            ).then((_) => _loadData()),
-                          ),
-                          const SizedBox(width: 12),
-                          _QuickAction(
-                            icon: Icons.calendar_today,
-                            label: 'Lihat\nBooking',
+                            icon: Icons.person_search,
+                            label: 'Cari\nPelanggan',
                             color: Colors.teal,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) => const BookingKasirScreen()),
+                                  builder: (_) =>
+                                      const KelolaPelangganScreen()),
                             ).then((_) => _loadData()),
                           ),
                           const SizedBox(width: 12),
@@ -281,6 +271,17 @@ class _DashboardKasirScreenState extends State<DashboardKasirScreen> {
                             label: 'Auto\nNo-Show',
                             color: Colors.red,
                             onTap: _autoNoShow,
+                          ),
+                          const SizedBox(width: 12),
+                          _QuickAction(
+                            icon: Icons.info_outline,
+                            label: 'Info Suku\nCadang',
+                            color: Colors.indigo,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const InfoSparepartScreen()),
+                            ),
                           ),
                         ],
                       ),

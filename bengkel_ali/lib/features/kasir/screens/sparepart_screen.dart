@@ -1,11 +1,13 @@
 // lib/features/kasir/screens/sparepart_screen.dart
 //
 // Wrapper screen: Tab 1 = Jual Sparepart, Tab 2 = Beli Stok
-// Di kasir_nav.dart: ganti JualSparepartScreen() → SparepartScreen()
-//                    dan import-nya ke sparepart_screen.dart
+// (Satu-satunya layar Jual Sparepart -- jual_sparepart_screen.dart yang
+// dulu terpisah/duplikat sudah dihapus, digantikan sepenuhnya oleh ini)
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/format_helper.dart';
 import '../models/kasir_models.dart';
@@ -762,6 +764,10 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   String _metodeBayar = 'cash';
   final _bayarCtrl = TextEditingController();
   bool _submitting = false;
+  bool _uploadingFoto = false;
+
+  // Foto bukti transfer
+  File? _fotoBukti;
 
   double get _jumlahBayar =>
       double.tryParse(_bayarCtrl.text.replaceAll('.', '')) ?? 0;
@@ -781,6 +787,18 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     super.dispose();
   }
 
+  Future<void> _pilihFotoGaleri() async {
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked != null) setState(() => _fotoBukti = File(picked.path));
+  }
+
+  Future<void> _ambilFotoKamera() async {
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.camera, imageQuality: 80);
+    if (picked != null) setState(() => _fotoBukti = File(picked.path));
+  }
+
   Future<void> _prosesBayar() async {
     if (!_cukup) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -789,6 +807,69 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       ));
       return;
     }
+
+    if (_metodeBayar == 'transfer' && _fotoBukti == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Harap lampirkan foto bukti transfer terlebih dahulu'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
+    final yakin = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Konfirmasi Pembayaran'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(FormatHelper.currency(widget.total),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Metode'),
+                Text(_metodeBayar == 'cash' ? 'Cash' : 'Transfer'),
+              ],
+            ),
+            if (_metodeBayar == 'cash') ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Kembalian'),
+                  Text(FormatHelper.currency(_kembalian)),
+                ],
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white),
+            child: const Text('Konfirmasi'),
+          ),
+        ],
+      ),
+    );
+    if (yakin != true || !mounted) return;
+
     setState(() => _submitting = true);
 
     final items = widget.keranjang
@@ -806,13 +887,27 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     );
 
     if (!mounted) return;
-    setState(() => _submitting = false);
 
     if (res['success'] == true) {
       final hasil = HasilTransaksiSparepart.fromJson(
           res['data'] as Map<String, dynamic>? ?? {});
+
+      if (_metodeBayar == 'transfer' &&
+          _fotoBukti != null &&
+          hasil.transaksiId > 0) {
+        setState(() => _uploadingFoto = true);
+        await KasirService.instance.uploadBuktiBayar(
+          transaksiId: hasil.transaksiId,
+          foto: _fotoBukti!,
+        );
+        if (mounted) setState(() => _uploadingFoto = false);
+      }
+
+      if (!mounted) return;
+      setState(() => _submitting = false);
       widget.onBerhasil(hasil);
     } else {
+      setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(res['message'] as String? ?? 'Transaksi gagal'),
         backgroundColor: AppColors.danger,
@@ -956,20 +1051,77 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                 ),
               ],
             ],
+            // Upload foto bukti transfer (hanya untuk metode transfer)
+            if (_metodeBayar == 'transfer') ...[
+              const SizedBox(height: 14),
+              const Text('Bukti Transfer',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              if (_fotoBukti != null)
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(_fotoBukti!,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: InkWell(
+                        onTap: () => setState(() => _fotoBukti = null),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                              color: Colors.black54, shape: BoxShape.circle),
+                          child: const Icon(Icons.close,
+                              color: Colors.white, size: 18),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _ambilFotoKamera,
+                        icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                        label: const Text('Kamera'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pilihFotoGaleri,
+                        icon:
+                            const Icon(Icons.photo_library_outlined, size: 18),
+                        label: const Text('Galeri'),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: (_submitting || !_cukup) ? null : _prosesBayar,
-                icon: _submitting
+                onPressed: (_submitting || _uploadingFoto || !_cukup)
+                    ? null
+                    : _prosesBayar,
+                icon: (_submitting || _uploadingFoto)
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.check_circle_outline),
-                label: Text(
-                    _submitting ? 'Memproses...' : 'Konfirmasi Pembayaran'),
+                label: Text(_uploadingFoto
+                    ? 'Mengunggah bukti...'
+                    : (_submitting ? 'Memproses...' : 'Konfirmasi Pembayaran')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.success,
                   foregroundColor: Colors.white,

@@ -696,7 +696,7 @@ class _FormWalkInScreenState extends State<FormWalkInScreen> {
     setState(() => _step++);
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool overrideKuota = false}) async {
     setState(() => _submitting = true);
     try {
       final payload = <String, dynamic>{
@@ -709,6 +709,7 @@ class _FormWalkInScreenState extends State<FormWalkInScreen> {
         'keluhan': _keluhanCtrl.text.trim(),
         'jenis_servis_id': _jenisServisId,
       };
+      if (overrideKuota) payload['override_kuota'] = true;
 
       // Pelanggan
       if (_pelangganBaru) {
@@ -735,6 +736,36 @@ class _FormWalkInScreenState extends State<FormWalkInScreen> {
 
       final res = await KasirService.instance.buatWalkIn(payload);
       if (!mounted) return;
+
+      // Kapasitas hari ini penuh → tawarkan konfirmasi untuk tetap lanjut,
+      // karena pelanggan walk-in sudah berada langsung di bengkel.
+      if (res['success'] != true && res['data']?['kuota_penuh'] == true) {
+        setState(() => _submitting = false);
+        final lanjut = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Kapasitas Hari Ini Penuh'),
+            content: Text(
+              '${res['message']}\n\nPelanggan sudah berada di bengkel — tetap lanjutkan walk-in ini?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Batal'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700),
+                child: const Text('Tetap Lanjutkan'),
+              ),
+            ],
+          ),
+        );
+        if (lanjut == true) await _submit(overrideKuota: true);
+        return;
+      }
+
       final ok = res['success'] == true;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content:

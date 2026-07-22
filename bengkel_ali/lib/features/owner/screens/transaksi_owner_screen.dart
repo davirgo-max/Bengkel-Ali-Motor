@@ -1,6 +1,7 @@
 // lib/features/owner/screens/transaksi_owner_screen.dart
 
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/currency_format.dart';
 import '../../../core/utils/format_helper.dart';
 import '../services/owner_service.dart';
@@ -19,8 +20,19 @@ class _TransaksiOwnerScreenState extends State<TransaksiOwnerScreen> {
   bool _loading = false;
 
   static const _bulan = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
   ];
 
   String get _tanggalParam =>
@@ -38,9 +50,11 @@ class _TransaksiOwnerScreenState extends State<TransaksiOwnerScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final res = await OwnerService.instance.getTransaksi(tanggal: _tanggalParam);
+      final res =
+          await OwnerService.instance.getTransaksi(tanggal: _tanggalParam);
       if (!mounted) return;
-      final data = res['success'] == true ? res['data'] as Map<String, dynamic>? : null;
+      final data =
+          res['success'] == true ? res['data'] as Map<String, dynamic>? : null;
       setState(() {
         _list = data?['transaksi'] as List? ?? [];
         _rekap = data?['rekap'] as Map<String, dynamic>? ?? {};
@@ -122,15 +136,17 @@ class _TransaksiOwnerScreenState extends State<TransaksiOwnerScreen> {
           if (!_loading && _rekap.isNotEmpty)
             Container(
               color: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   _rekapItem(Icons.receipt_long, 'Transaksi',
                       '${_rekap['jumlah'] ?? 0}x', Colors.blue.shade700),
                   const SizedBox(width: 16),
-                  _rekapItem(Icons.payments, 'Total',
-                      formatRupiah(_rekap['total'] ?? 0), Colors.green.shade700),
+                  _rekapItem(
+                      Icons.payments,
+                      'Total',
+                      formatRupiah(_rekap['total'] ?? 0),
+                      Colors.green.shade700),
                   const SizedBox(width: 16),
                   _rekapItem(Icons.money, 'Cash',
                       formatRupiah(_rekap['cash'] ?? 0), Colors.teal.shade700),
@@ -153,12 +169,10 @@ class _TransaksiOwnerScreenState extends State<TransaksiOwnerScreen> {
                                 size: 56, color: Colors.grey.shade300),
                             const SizedBox(height: 12),
                             Text('Tidak ada transaksi',
-                                style:
-                                    TextStyle(color: Colors.grey.shade500)),
+                                style: TextStyle(color: Colors.grey.shade500)),
                             Text('pada $_tanggalLabel',
                                 style: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontSize: 12)),
+                                    color: Colors.grey.shade400, fontSize: 12)),
                           ],
                         ),
                       )
@@ -186,14 +200,14 @@ class _TransaksiOwnerScreenState extends State<TransaksiOwnerScreen> {
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 6),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(value,
                   style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.bold, color: color),
                   overflow: TextOverflow.ellipsis),
               Text(label,
-                  style:
-                      TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
             ]),
           ),
         ]),
@@ -224,16 +238,13 @@ class _TransaksiCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
-                backgroundColor: isServis
-                    ? Colors.blue.shade50
-                    : Colors.teal.shade50,
+                backgroundColor:
+                    isServis ? Colors.blue.shade50 : Colors.teal.shade50,
                 radius: 20,
                 child: Icon(
                   isServis ? Icons.build : Icons.shopping_bag,
                   size: 18,
-                  color: isServis
-                      ? Colors.blue.shade700
-                      : Colors.teal.shade700,
+                  color: isServis ? Colors.blue.shade700 : Colors.teal.shade700,
                 ),
               ),
               const SizedBox(width: 12),
@@ -307,9 +318,7 @@ class _TransaksiCard extends StatelessWidget {
       ),
       child: Text(status,
           style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: color)),
+              fontSize: 10, fontWeight: FontWeight.bold, color: color)),
     );
   }
 }
@@ -334,12 +343,12 @@ class _DetailBottomSheetState extends State<_DetailBottomSheet> {
   }
 
   Future<void> _load() async {
-    final res = await OwnerService.instance.getDetailTransaksi(widget.transaksiId);
+    final res =
+        await OwnerService.instance.getDetailTransaksi(widget.transaksiId);
     if (!mounted) return;
     setState(() {
-      _data = res['success'] == true
-          ? res['data'] as Map<String, dynamic>?
-          : null;
+      _data =
+          res['success'] == true ? res['data'] as Map<String, dynamic>? : null;
       _loading = false;
     });
   }
@@ -347,8 +356,8 @@ class _DetailBottomSheetState extends State<_DetailBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       padding: const EdgeInsets.all(20),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -368,7 +377,8 @@ class _DetailBottomSheetState extends State<_DetailBottomSheet> {
         children: [
           Center(
             child: Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(2),
@@ -377,8 +387,8 @@ class _DetailBottomSheetState extends State<_DetailBottomSheet> {
           ),
           const SizedBox(height: 16),
           Text(trx['no_nota'] as String? ?? '-',
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 16)),
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           Text(
             '${trx['nama_kasir'] ?? '-'} · '
             '${FormatHelper.tanggalWaktu(trx['tanggal'] as String? ?? '')}',
@@ -421,33 +431,95 @@ class _DetailBottomSheetState extends State<_DetailBottomSheet> {
             const Divider(height: 16),
           ],
 
-          if ((trx['total_jasa'] ?? 0) > 0)
+          // trx['total_jasa'] dkk berasal dari kolom DECIMAL di MySQL, yang
+          // selalu dikirim PHP sebagai String di JSON (mis. "0.00"). Bandingkan
+          // String langsung dengan `> 0` melempar NoSuchMethodError ("Class
+          // 'String' has no instance method '>'"), jadi di-parse dulu ke num.
+          if ((double.tryParse((trx['total_jasa'] ?? 0).toString()) ?? 0) > 0)
             _row('Jasa Servis', formatRupiah(trx['total_jasa'] ?? 0)),
-          if ((trx['total_sparepart'] ?? 0) > 0)
+          if ((double.tryParse((trx['total_sparepart'] ?? 0).toString()) ?? 0) >
+              0)
             _row('Sparepart', formatRupiah(trx['total_sparepart'] ?? 0)),
-          if ((trx['diskon'] ?? 0) > 0)
+          if ((double.tryParse((trx['diskon'] ?? 0).toString()) ?? 0) > 0)
             _row('Diskon', '- ${formatRupiah(trx['diskon'] ?? 0)}',
                 valueColor: Colors.red),
           const Divider(height: 12),
           _row('Total', formatRupiah(trx['grand_total'] ?? 0),
               bold: true, valueColor: Colors.green.shade700),
           _row('Metode Bayar', trx['metode_bayar'] as String? ?? '-'),
+
+          // Tombol lihat foto bukti transfer -- hanya muncul kalau metode
+          // bayarnya transfer DAN memang ada file bukti yang sudah diunggah
+          // kasir (kolom bukti_bayar di tabel transaksi).
+          if (trx['metode_bayar'] == 'transfer' &&
+              (trx['bukti_bayar'] as String? ?? '').isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _lihatBuktiTransfer(
+                    trx['bukti_bayar'] as String, trx['no_nota'] as String?),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Lihat Foto Bukti Pembayaran'),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
         ],
       ),
     );
   }
 
+  void _lihatBuktiTransfer(String filename, String? noNota) {
+    final url = '${AppConstants.uploadUrl}/bukti_bayar/$filename';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            title: Text(noNota ?? 'Bukti Pembayaran',
+                style: const TextStyle(fontSize: 14)),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                loadingBuilder: (ctx, child, progress) => progress == null
+                    ? child
+                    : const CircularProgressIndicator(color: Colors.white),
+                errorBuilder: (_, __, ___) => const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.broken_image_outlined,
+                        color: Colors.white54, size: 64),
+                    SizedBox(height: 12),
+                    Text('Gagal memuat gambar',
+                        style: TextStyle(color: Colors.white54)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _row(String label, String value,
-      {bool bold = false, Color? valueColor}) =>
+          {bool bold = false, Color? valueColor}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(label,
-                style:
-                    TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
             Text(value,
                 style: TextStyle(
                     fontSize: 13,

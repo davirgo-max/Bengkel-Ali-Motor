@@ -172,13 +172,16 @@ class KasirService {
 
   Future<Map<String, dynamic>> selesaiDiagnosa({
     required int servisId,
-    required bool importRequest,
     required String lanjutKe, // 'dikerjakan' | 'menunggu_part'
+    // Kasir sudah konfirmasi sparepart rekomendasi/manual ke pelanggan di
+    // luar aplikasi (telepon/langsung) -- kalau true, semua sparepart
+    // rekomendasi/manual yang masih 'menunggu' di-auto-approve di server.
+    bool konfirmasiLuarAplikasi = false,
   }) =>
       _put('${AppConstants.kasirServisUrl}?id=$servisId', {
         'action': 'selesai_diagnosa',
-        'import_request': importRequest,
         'lanjut_ke': lanjutKe,
+        'konfirmasi_luar_aplikasi': konfirmasiLuarAplikasi,
       });
 
   Future<Map<String, dynamic>> tambahSparepart({
@@ -302,6 +305,30 @@ class KasirService {
   /// Ambil pengaturan bengkel (termasuk kuota_booking_harian).
   Future<Map<String, dynamic>> getPengaturan() =>
       _get('${AppConstants.baseUrl}/kasir/pengaturan.php');
+
+  /// Simpan pengaturan bengkel. Kirim seluruh field (backend meng-overwrite
+  /// semua kolom), bukan cuma kuota_booking_harian saja.
+  Future<Map<String, dynamic>> updatePengaturan(Map<String, dynamic> data) =>
+      _put('${AppConstants.baseUrl}/kasir/pengaturan.php', data);
+
+  // ── INFO SUKU CADANG (view-only, dipakai di Aksi Cepat) ────
+  // Pakai endpoint pelanggan/sparepart.php yang sama -- sudah dibuka juga
+  // untuk role kasir di backend. Ini murni katalog (tidak ada data
+  // pribadi), jadi aman dipakai bareng.
+  Future<Map<String, dynamic>> getInfoSparepart({
+    String? search,
+    int? kategoriId,
+  }) async {
+    var url = '${AppConstants.baseUrl}/pelanggan/sparepart.php';
+    final p = <String>[];
+    if (search != null && search.isNotEmpty) p.add('search=$search');
+    if (kategoriId != null) p.add('kategori_id=$kategoriId');
+    if (p.isNotEmpty) url += '?${p.join('&')}';
+    return _get(url);
+  }
+
+  Future<Map<String, dynamic>> getInfoSparepartDetail(int id) =>
+      _get('${AppConstants.baseUrl}/pelanggan/sparepart.php?id=$id');
 
   // ── UPLOAD BUKTI TRANSFER ─────────────────────────────
   Future<Map<String, dynamic>> uploadBuktiBayar({

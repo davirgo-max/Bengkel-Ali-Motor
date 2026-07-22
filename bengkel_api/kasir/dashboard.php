@@ -48,18 +48,6 @@ $stmt->execute();
 $servis = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-// ── Kas harian ────────────────────────────────────────────
-$stmt = $db->prepare("
-    SELECT id, status, kas_awal, kas_akhir_sistem,
-           kas_akhir_fisik, selisih, total_pemasukan,
-           catatan_kasir, ditutup_at
-    FROM kas_harian WHERE tanggal = ? LIMIT 1
-");
-$stmt->bind_param('s', $tanggal);
-$stmt->execute();
-$kas = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-
 // ── Total pemasukan dari transaksi ────────────────────────
 $stmt = $db->prepare("
     SELECT
@@ -93,7 +81,6 @@ responseOk('OK', [
     'tanggal'         => $tanggal,
     'booking'         => $booking,
     'servis'          => $servis,
-    'kas'             => $kas,
     'pemasukan'       => $pemasukan,
     'menunggu_bayar'  => $menungguBayar,
 ]);

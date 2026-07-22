@@ -71,11 +71,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Gunakan akun staff yang diberikan admin',
+            'Login khusus Admin untuk mengelola data master bengkel',
             style: TextStyle(fontSize: 13, color: Color(0xFF888899)),
           ),
           const SizedBox(height: 36),
-
           const Text(
             'Username',
             style: TextStyle(
@@ -95,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 18),
-
           const Text(
             'Password',
             style: TextStyle(
@@ -124,7 +122,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           if (_error != null)
             Container(
               width: double.infinity,
@@ -154,7 +151,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           const SizedBox(height: 24),
-
           SizedBox(
             width: double.infinity,
             height: 46,
@@ -172,66 +168,101 @@ class _LoginScreenState extends State<LoginScreen> {
                   : const Text('Masuk'),
             ),
           ),
-
           const SizedBox(height: 32),
           const Divider(),
           const SizedBox(height: 16),
-          const Center(
-            child: Text(
-              'Lupa password? Hubungi admin sistem.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF888899)),
-              textAlign: TextAlign.center,
-            ),
-          ),
+          // const Center(
+          //   child: Text(
+          //     'Lupa password? Hubungi admin sistem.',
+          //     style: TextStyle(fontSize: 12, color: Color(0xFF888899)),
+          //     textAlign: TextAlign.center,
+          //   ),
+          // ),
         ],
       ),
     );
 
     final brandPanel = Container(
-      color: AppTheme.primary,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/login_bg.png'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
+          // Scrim tipis di atas foto agar teks tetap terbaca tanpa menutupi background
           Container(
-            width: 72,
-            height: 72,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Icon(Icons.car_repair, color: Colors.white, size: 40),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Bengkel Ali Motor',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppTheme.primary.withOpacity(0.55),
+                  AppTheme.primary.withOpacity(0.45),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Dashboard Staff',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.65),
-              fontSize: 14,
-            ),
+
+          // Konten utama (judul + info role)
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child:
+                      Image.asset('assets/images/logo.png', fit: BoxFit.cover),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Bengkel Ali Motor',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Dashboard Khusus Admin',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.65),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 48),
+              _infoRow(
+                Icons.admin_panel_settings,
+                'Admin',
+                'Kelola data master & akun',
+              ),
+              const SizedBox(height: 14),
+              _infoRow(
+                Icons.point_of_sale,
+                'Kasir',
+                'Proses booking, servis & transaksi',
+              ),
+              const SizedBox(height: 14),
+              _infoRow(
+                  Icons.bar_chart, 'Owner', 'Pantau stok, transaksi & laporan'),
+            ],
           ),
-          const SizedBox(height: 48),
-          _infoRow(
-            Icons.admin_panel_settings,
-            'Admin',
-            'Kelola data master & akun',
-          ),
-          const SizedBox(height: 14),
-          _infoRow(
-            Icons.point_of_sale,
-            'Kasir',
-            'Proses booking, servis & transaksi',
-          ),
-          const SizedBox(height: 14),
-          _infoRow(Icons.bar_chart, 'Owner', 'Pantau laporan & verifikasi kas'),
         ],
       ),
     );
@@ -257,40 +288,40 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _infoRow(IconData icon, String title, String sub) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 48),
-    child: Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: Colors.white, size: 18),
-        ),
-        const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 48),
+        child: Row(
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: Icon(icon, color: Colors.white, size: 18),
             ),
-            Text(
-              sub,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 12,
-              ),
+            const SizedBox(width: 14),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-      ],
-    ),
-  );
+      );
 }

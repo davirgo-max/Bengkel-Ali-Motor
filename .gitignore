@@ -7,6 +7,15 @@ bengkel_api/config/service_account.json
 # FCM cache
 bengkel_api/config/fcm_token_cache.json
 
+# Mail_config
+bengkel_api/config/mail_config.php
+
+# Uploads
+bengkel_api/uploads
+
+# Vendor
+bengkel_api/vendor
+
 # Database Backup
 db_backup/
 

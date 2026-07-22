@@ -15,8 +15,12 @@ $db   = getDB();
 
 // ── GET ───────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $tampilkan = $_GET['tampilkan'] ?? 'aktif'; // aktif | semua
-    $where = $tampilkan === 'semua' ? '' : 'WHERE m.is_aktif = 1';
+    $tampilkan = $_GET['tampilkan'] ?? 'aktif'; // aktif | nonaktif | semua
+    $where = match ($tampilkan) {
+        'nonaktif' => 'WHERE m.is_aktif = 0',
+        'semua'    => '',
+        default    => 'WHERE m.is_aktif = 1',
+    };
 
     $result = $db->query("
         SELECT m.id, m.nama, m.no_hp, m.spesialisasi,

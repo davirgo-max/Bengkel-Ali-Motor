@@ -150,6 +150,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         responseError($batas['alasan'], 429);
     }
 
+    // ── CEK 2b: Kuota booking harian ──────────────────────
+    $stmtKuota = $db->prepare("SELECT kuota_booking_harian FROM pengaturan_bengkel WHERE id=1 LIMIT 1");
+    $stmtKuota->execute();
+    $pengaturanRow = $stmtKuota->get_result()->fetch_assoc();
+    $stmtKuota->close();
+    $kuotaHarian = (int)($pengaturanRow['kuota_booking_harian'] ?? 0);
+
+    if ($kuotaHarian > 0) {
+        $stmtTerisi = $db->prepare("
+            SELECT COUNT(*) AS total FROM booking
+            WHERE tanggal_servis = ? AND status NOT IN ('dibatalkan','no_show')
+        ");
+        $stmtTerisi->bind_param('s', $tglServis);
+        $stmtTerisi->execute();
+        $terisi = (int)$stmtTerisi->get_result()->fetch_assoc()['total'];
+        $stmtTerisi->close();
+
+        if ($terisi >= $kuotaHarian) {
+            responseError(
+                "Kuota booking untuk tanggal $tglServis sudah penuh ($terisi/$kuotaHarian). Silakan pilih tanggal lain.",
+                429
+            );
+        }
+    }
+
     // ── CEK 3: Kendaraan milik pelanggan ─────────────────
     $stmt = $db->prepare("SELECT id FROM kendaraan WHERE id=? AND pelanggan_id=? LIMIT 1");
     $stmt->bind_param('ii', $kendaraanId, $pelangganId);
@@ -351,6 +376,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     if (!$booking) responseError('Booking tidak ditemukan', 404);
     if (!in_array($booking['status'], ['menunggu','dikonfirmasi']))
         responseError('Booking dengan status "' . $booking['status'] . '" tidak dapat dijadwalkan ulang');
+
+    // ── Kuota booking harian di tanggal tujuan ────────────
+    $stmtKuota = $db->prepare("SELECT kuota_booking_harian FROM pengaturan_bengkel WHERE id=1 LIMIT 1");
+    $stmtKuota->execute();
+    $pengaturanRow = $stmtKuota->get_result()->fetch_assoc();
+    $stmtKuota->close();
+    $kuotaHarian = (int)($pengaturanRow['kuota_booking_harian'] ?? 0);
+
+    if ($kuotaHarian > 0) {
+        // Booking ini sendiri (di tanggal lama) tidak ikut dihitung karena
+        // akan berpindah keluar dari tanggal lama.
+        $stmtTerisi = $db->prepare("
+            SELECT COUNT(*) AS total FROM booking
+            WHERE tanggal_servis = ? AND status NOT IN ('dibatalkan','no_show') AND id != ?
+        ");
+        $stmtTerisi->bind_param('si', $tglBaru, $id);
+        $stmtTerisi->execute();
+        $terisi = (int)$stmtTerisi->get_result()->fetch_assoc()['total'];
+        $stmtTerisi->close();
+
+        if ($terisi >= $kuotaHarian) {
+            responseError(
+                "Kuota booking untuk tanggal $tglBaru sudah penuh ($terisi/$kuotaHarian). Silakan pilih tanggal lain.",
+                429
+            );
+        }
+    }
 
     $stmt = $db->prepare("UPDATE booking SET tanggal_servis=?, slot_id=? WHERE id=?");
     $stmt->bind_param('sii', $tglBaru, $slotId, $id);

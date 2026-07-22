@@ -4,8 +4,8 @@ class AppConstants {
   AppConstants._();
 
   // ── Ganti IP sesuai server ────────────────────────────────
-  static const String baseUrl = 'http://192.168.1.160/bengkel_api';
-  static const String uploadUrl = 'http://192.168.1.160/bengkel_api/uploads';
+  static const String baseUrl = 'http://192.168.43.94/bengkel_api';
+  static const String uploadUrl = 'http://192.168.43.94/bengkel_api/uploads';
 
   // ── Auth ──────────────────────────────────────────────────
   static const String loginUrl = '$baseUrl/auth/login.php';

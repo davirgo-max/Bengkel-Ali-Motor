@@ -144,7 +144,7 @@ class _PengaturanBengkelScreenState extends State<PengaturanBengkelScreen> {
                 _InfoItem('Jam Buka', d.jamBuka),
                 _InfoItem('Jam Tutup', d.jamTutup),
                 _InfoItem(
-                    'Kuota Booking / Hari', '${d.kuotaBookingHarian} booking'),
+                    'Kuota Servis / Hari', '${d.kuotaBookingHarian} servis'),
               ]),
               if (d.updatedAt != null) ...[
                 const SizedBox(height: 16),
@@ -265,7 +265,7 @@ class _EditPengaturanDialogState extends State<_EditPengaturanDialog> {
       return;
     }
     if (kuota < 1 || kuota > 100) {
-      widget.onError('Kuota booking harian harus antara 1 – 100');
+      widget.onError('Kuota servis harian harus antara 1 – 100');
       return;
     }
 
@@ -399,7 +399,7 @@ class _EditPengaturanDialogState extends State<_EditPengaturanDialog> {
                 const SizedBox(height: 14),
 
                 // Kuota booking
-                const FieldLabel('Kuota Booking Harian', required: true),
+                const FieldLabel('Kuota Servis Harian', required: true),
                 TextField(
                   controller: _kuotaCtrl,
                   enabled: !_saving,
@@ -409,7 +409,7 @@ class _EditPengaturanDialogState extends State<_EditPengaturanDialog> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                    'Jumlah booking yang dapat diterima per hari (1 – 100)',
+                    'Jumlah servis yang dapat diterima per hari (1 – 100)',
                     style: TextStyle(fontSize: 11, color: Color(0xFF888899))),
                 const SizedBox(height: 24),
 

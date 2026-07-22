@@ -61,11 +61,18 @@ class _TransaksiKasirScreenState extends State<TransaksiKasirScreen> {
       "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
   void _bukaaNota(Map<String, dynamic> data) {
-    final trxId = (data['id'] as num?)?.toInt();
+    // Sama seperti di _TransaksiCard: id/grand_total dari API bisa berupa
+    // String (kolom DECIMAL selalu dikirim PHP sebagai string di JSON),
+    // jadi jangan pakai `as num?` langsung -- itu bikin fungsi ini crash
+    // diam-diam sebelum sempat Navigator.push, alias tombol "terasa" tidak
+    // merespons sama sekali.
+    final trxId = int.tryParse(data['id'].toString());
     if (trxId == null) return;
     final noNota = data['no_nota'] as String? ?? '';
     final metodeBayar = data['metode_bayar'] as String? ?? 'cash';
-    final grandTotal = (data['grand_total'] as num?)?.toDouble() ?? 0;
+    final grandTotal = double.tryParse(
+            (data['grand_total'] ?? data['total'] ?? 0).toString()) ??
+        0;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -76,6 +83,7 @@ class _TransaksiKasirScreenState extends State<TransaksiKasirScreen> {
           grandTotal: grandTotal,
           jumlahBayar: grandTotal,
           kembalian: 0,
+          fromRiwayat: true,
         ),
       ),
     );
@@ -269,19 +277,28 @@ class _TransaksiCard extends StatelessWidget {
                   Text('Total Bayar',
                       style:
                           TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                  Row(
-                    children: [
-                      Text(FormatHelper.currency(total),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.teal)),
-                      const SizedBox(width: 8),
-                      Icon(Icons.receipt_long,
-                          size: 16, color: Colors.indigo.shade300),
-                    ],
-                  ),
+                  Text(FormatHelper.currency(total),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.teal)),
                 ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.receipt_long, size: 16),
+                  label: const Text('Lihat / Cetak Nota'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.indigo.shade700,
+                    side: BorderSide(color: Colors.indigo.shade200),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
               ),
             ],
           ),

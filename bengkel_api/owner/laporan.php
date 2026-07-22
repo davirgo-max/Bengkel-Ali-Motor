@@ -202,25 +202,6 @@ if ($tipe === 'keuangan') {
     $hpp = (float)$stmt->get_result()->fetch_assoc()['total_hpp'];
     $stmt->close();
 
-    // Kas harian dalam range
-    $stmt = $db->prepare("
-        SELECT kh.tanggal, kh.status,
-               kh.kas_awal, kh.total_pemasukan,
-               kh.kas_akhir_sistem, kh.kas_akhir_fisik, kh.selisih,
-               u.nama AS nama_kasir
-        FROM kas_harian kh
-        JOIN users u ON u.id = kh.kasir_id
-        WHERE kh.tanggal BETWEEN ? AND ?
-        ORDER BY kh.tanggal DESC
-    ");
-    $stmt->bind_param('ss', $tglMulai, $tglSelesai);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $kasHarian = [];
-    while ($r = $result->fetch_assoc()) $kasHarian[] = $r;
-    $result->free();
-    $stmt->close();
-
     $db->close();
     responseOk('OK', [
         'tipe'    => 'keuangan',
@@ -229,7 +210,6 @@ if ($tipe === 'keuangan') {
             'hpp_sparepart' => $hpp,
             'laba_kotor'    => (float)$ringkasan['total_pemasukan'] - $hpp,
         ]),
-        'kas_harian' => $kasHarian,
     ]);
 }
 

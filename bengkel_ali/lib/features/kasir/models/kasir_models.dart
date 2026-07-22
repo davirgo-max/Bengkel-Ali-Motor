@@ -149,9 +149,44 @@ class ServisSparepart {
 
   bool get isRequest => sumber == 'request';
   bool get isRekomendasi => sumber == 'rekomendasi';
+  bool get isManual => sumber == 'manual';
+  // Ditambah kasir di luar request pelanggan (rekomendasi atau input manual)
+  bool get isDariKasir => sumber == 'rekomendasi' || sumber == 'manual';
   bool get isMenunggu => statusPersetujuan == 'menunggu';
   bool get isDisetujui => statusPersetujuan == 'disetujui';
   bool get isDitolak => statusPersetujuan == 'ditolak';
+}
+
+/// Sparepart yang diminta pelanggan saat booking, tapi BELUM diimpor ke
+/// servis. Dipakai popup "Tentukan Sparepart" supaya kasir bisa pilih
+/// per-item mana yang mau dimasukkan ke servis (bukan cuma toggle
+/// impor-semua-atau-tidak).
+class SparepartRequestPending {
+  final int sparepartId;
+  final String nama, satuan;
+  final int jumlah, stok;
+  final double hargaJual, subtotal;
+
+  const SparepartRequestPending({
+    required this.sparepartId,
+    required this.nama,
+    required this.satuan,
+    required this.jumlah,
+    required this.stok,
+    required this.hargaJual,
+    required this.subtotal,
+  });
+
+  factory SparepartRequestPending.fromJson(Map<String, dynamic> j) =>
+      SparepartRequestPending(
+        sparepartId: _parseInt(j['sparepart_id']),
+        nama: j['nama'] as String? ?? '',
+        satuan: j['satuan'] as String? ?? '',
+        jumlah: _parseInt(j['jumlah']),
+        stok: _parseInt(j['stok']),
+        hargaJual: _parseDouble(j['harga_jual']),
+        subtotal: _parseDouble(j['subtotal']),
+      );
 }
 
 class MekanikModel {
@@ -197,6 +232,7 @@ class DetailServisModel {
   final List<Map<String, dynamic>> jenisServisList;
   final double totalJasa, totalPart, grandTotal;
   final bool adaMenungguPersetujuan;
+  final List<SparepartRequestPending> sparepartRequestPending;
 
   const DetailServisModel({
     required this.servis,
@@ -207,6 +243,7 @@ class DetailServisModel {
     required this.totalPart,
     required this.grandTotal,
     required this.adaMenungguPersetujuan,
+    required this.sparepartRequestPending,
   });
 
   factory DetailServisModel.fromJson(Map<String, dynamic> j) =>
@@ -228,6 +265,10 @@ class DetailServisModel {
         totalPart: _parseDouble(j['total_part']),
         grandTotal: _parseDouble(j['grand_total']),
         adaMenungguPersetujuan: j['ada_menunggu_persetujuan'] as bool? ?? false,
+        sparepartRequestPending: (j['sparepart_request_pending'] as List? ?? [])
+            .map((e) =>
+                SparepartRequestPending.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
 }
 
@@ -309,6 +350,7 @@ class KasirBookingSparepartRequest {
 
 // ── Hasil transaksi dari API ──────────────────────────────────
 class HasilTransaksiSparepart {
+  final int transaksiId;
   final String noNota;
   final double grandTotal;
   final double jumlahBayar;
@@ -317,6 +359,7 @@ class HasilTransaksiSparepart {
   final String tanggal;
 
   const HasilTransaksiSparepart({
+    required this.transaksiId,
     required this.noNota,
     required this.grandTotal,
     required this.jumlahBayar,
@@ -327,6 +370,7 @@ class HasilTransaksiSparepart {
 
   factory HasilTransaksiSparepart.fromJson(Map<String, dynamic> j) =>
       HasilTransaksiSparepart(
+        transaksiId: int.tryParse(j['transaksi_id'].toString()) ?? 0,
         noNota: j['no_nota'] as String? ?? '-',
         grandTotal: _parseDouble(j['grand_total']),
         jumlahBayar: _parseDouble(j['jumlah_bayar']),

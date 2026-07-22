@@ -34,21 +34,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
-      // DEV MODE: tampilkan OTP dari response (hapus saat production)
-      final devOtp = result['dev_otp'] as String?;
-
-      if (devOtp != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('[DEV] OTP kamu: $devOtp'),
-              backgroundColor: Colors.orange.shade700,
-              duration: const Duration(seconds: 10),
-            ),
-          );
-        }
-      }
-
       if (mounted) {
         Navigator.push(
           context,

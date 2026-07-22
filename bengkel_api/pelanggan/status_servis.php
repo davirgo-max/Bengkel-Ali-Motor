@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         JOIN kendaraan k  ON k.id = b.kendaraan_id
         LEFT JOIN jenis_servis js ON js.id = b.jenis_servis_id
         WHERE b.pelanggan_id = ?
-        ORDER BY b.tanggal_servis DESC
+        ORDER BY b.tanggal_servis DESC, s.id DESC
     ");
     $stmt->bind_param('i', $pelangganId);
     $stmt->execute();

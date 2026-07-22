@@ -61,9 +61,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     $whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $sql = "
-        SELECT s.id, s.kode, s.nama, s.satuan,
+        SELECT s.id, s.kode, s.nama, s.deskripsi, s.satuan,
                s.harga_beli, s.harga_jual, s.stok,
                s.stok_minimum, s.foto, s.is_aktif,
+               s.kategori_id,
                k.nama AS kategori_nama,
                (s.stok <= s.stok_minimum) AS stok_menipis
         FROM sparepart s
@@ -160,6 +161,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         responseError('Sparepart tidak ditemukan', 404);
     }
     $stmt->close();
+
+    // ── Aksi khusus: toggle aktif/nonaktif saja ──
+    // Dipanggil dari tombol Aktifkan/Nonaktifkan di halaman Kelola Sparepart,
+    // yang hanya mengirim {action, is_aktif} tanpa field lain. Ditangani
+    // terpisah di sini supaya tidak ikut divalidasi/ditimpa oleh alur edit
+    // lengkap di bawah, yang mewajibkan kode & nama serta menimpa semua kolom.
+    if (($body['action'] ?? '') === 'toggle_aktif') {
+        if (!isset($body['is_aktif'])) responseError('Status is_aktif wajib diisi');
+        $isAktif = (int)$body['is_aktif'];
+
+        $stmt = $db->prepare("UPDATE sparepart SET is_aktif=? WHERE id=?");
+        $stmt->bind_param('ii', $isAktif, $id);
+        $stmt->execute(); $stmt->close();
+        $db->close();
+
+        responseOk($isAktif ? 'Sparepart diaktifkan' : 'Sparepart dinonaktifkan');
+    }
 
     $kode       = strtoupper(trim($body['kode']       ?? ''));
     $nama       = trim($body['nama']                  ?? '');

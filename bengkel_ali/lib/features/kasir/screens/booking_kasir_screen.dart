@@ -21,6 +21,7 @@ class _BookingKasirScreenState extends State<BookingKasirScreen>
   Map<String, int> _dots = {};
   int _kuotaHarian = 0;
   bool _loadingKuota = true;
+  Map<String, dynamic>? _pengaturanFull;
 
   static const int _kStrip = 7; // jumlah hari di strip
   static const int _kCenter = 3; // index hari aktif (tengah)
@@ -51,6 +52,7 @@ class _BookingKasirScreenState extends State<BookingKasirScreen>
       if (!mounted) return;
       if (res['success'] == true && res['data'] != null) {
         setState(() {
+          _pengaturanFull = Map<String, dynamic>.from(res['data']);
           _kuotaHarian =
               int.tryParse(res['data']['kuota_booking_harian'].toString()) ?? 0;
           _loadingKuota = false;
@@ -62,6 +64,76 @@ class _BookingKasirScreenState extends State<BookingKasirScreen>
       if (!mounted) return;
       setState(() => _loadingKuota = false);
     }
+  }
+
+  /// Dialog untuk kasir mengubah batas servis (kuota booking) harian
+  /// langsung dari menu booking, tanpa harus lewat menu Pengaturan admin.
+  Future<void> _editKuota() async {
+    if (_pengaturanFull == null) return;
+    final ctrl = TextEditingController(text: _kuotaHarian.toString());
+
+    final hasil = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ubah Batas Servis Harian'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Batas ini berlaku untuk booking pelanggan maupun walk-in hari ini.',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Kapasitas servis / hari',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final n = int.tryParse(ctrl.text.trim());
+              if (n == null || n < 1) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                  content:
+                      Text('Masukkan angka kapasitas yang valid (minimal 1)'),
+                  backgroundColor: Colors.red,
+                ));
+                return;
+              }
+              Navigator.pop(ctx, n);
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+
+    if (hasil == null || !mounted) return;
+
+    final payload = Map<String, dynamic>.from(_pengaturanFull!)
+      ..['kuota_booking_harian'] = hasil;
+
+    final res = await KasirService.instance.updatePengaturan(payload);
+    if (!mounted) return;
+    final ok = res['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+          res['message'] ?? (ok ? 'Kapasitas diperbarui' : 'Gagal menyimpan')),
+      backgroundColor: ok ? Colors.green : Colors.red,
+    ));
+    if (ok) _loadKuota();
   }
 
   @override
@@ -291,6 +363,7 @@ class _BookingKasirScreenState extends State<BookingKasirScreen>
                   .length,
               kuota: _kuotaHarian,
               loading: _loadingKuota,
+              onTap: _loadingKuota ? null : _editKuota,
             ),
           // ── Tab Content ──────────────────────────────────
           Expanded(
@@ -410,11 +483,13 @@ class _KapasitasBanner extends StatelessWidget {
   final int terisi;
   final int kuota;
   final bool loading;
+  final VoidCallback? onTap;
 
   const _KapasitasBanner({
     required this.terisi,
     required this.kuota,
     required this.loading,
+    this.onTap,
   });
 
   @override
@@ -448,49 +523,54 @@ class _KapasitasBanner extends StatelessWidget {
             ? Colors.orange.shade800
             : Colors.green.shade800;
 
-    return Container(
-      color: warnaBanner,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                penuh
-                    ? Icons.block
-                    : hampirPenuh
-                        ? Icons.warning_amber_rounded
-                        : Icons.event_available,
-                size: 16,
-                color: warnaText,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: warnaBanner,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
                   penuh
-                      ? 'Kapasitas hari ini PENUH ($terisi/$kuota slot)'
-                      : 'Kapasitas hari ini: $terisi/$kuota slot · Sisa $sisa slot',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: warnaText,
+                      ? Icons.block
+                      : hampirPenuh
+                          ? Icons.warning_amber_rounded
+                          : Icons.event_available,
+                  size: 16,
+                  color: warnaText,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    penuh
+                        ? 'Kapasitas hari ini PENUH ($terisi/$kuota slot)'
+                        : 'Kapasitas hari ini: $terisi/$kuota slot · Sisa $sisa slot',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: warnaText,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: persen,
-              minHeight: 6,
-              backgroundColor: Colors.grey.shade200,
-              valueColor: AlwaysStoppedAnimation<Color>(warnaBar),
+                if (onTap != null)
+                  Icon(Icons.edit, size: 15, color: warnaText.withOpacity(0.7)),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: persen,
+                minHeight: 6,
+                backgroundColor: Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(warnaBar),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

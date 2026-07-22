@@ -20,15 +20,15 @@ $password = trim($body['password'] ?? '');
 $alamat   = trim($body['alamat']   ?? '');
 
 // Validasi wajib
-if (!$nama || !$no_hp || !$password) {
-    responseError('Nama, no HP, dan password wajib diisi');
+if (!$nama || !$no_hp || !$email || !$password) {
+    responseError('Nama, no HP, email, dan password wajib diisi');
 }
 
 if (strlen($password) < 6) {
     responseError('Password minimal 6 karakter');
 }
 
-if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     responseError('Format email tidak valid');
 }
 

@@ -88,10 +88,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 }),
               const SizedBox(height: 14),
-              _buildField(_emailCtrl, 'Email (opsional)', Icons.email,
+              _buildField(_emailCtrl, 'Email', Icons.email,
                 type: TextInputType.emailAddress,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null; // opsional
+                  if (v == null || v.trim().isEmpty) return 'Wajib diisi';
                   final valid = RegExp(r'^[\w-.]+@[\w-]+\.[a-z]{2,}$').hasMatch(v.trim());
                   return valid ? null : 'Format email tidak valid';
                 }),
